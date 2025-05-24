@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json
+# import re # No longer needed for the new command parsing logic
 
 # Rich imports
 from rich import print as rprint
@@ -75,45 +76,114 @@ def display_initial_state(player: Player, npc: Character, location: Location):
     console.line()
     rprint(Panel(f"Starting Interactive Conversation with {npc.name}... (Type 'quit' to end)", title_align="center", border_style="dim white"))
 
+# Regex to capture optional dialogue and an optional /give command
+# It captures: (dialogue_part) (full_command_part including /give) (item_name_for_give)
+# COMMAND_REGEX = re.compile(r"^(.*?)(?:\s*(\/give\s+(.+)))?$", re.IGNORECASE) # Old regex, no longer needed
+
 def handle_player_action(player1: Player, npc: Character, player_msg: str) -> bool:
-    """Handles the player's action, whether it's a command or dialogue. Returns True if NPC should respond."""
-    if player_msg.lower().startswith("/give "):
-        command_parts = player_msg.split(maxsplit=1)
-        if len(command_parts) > 1:
-            item_name_to_give = command_parts[1].strip()
+    """Handles the player's action, which must be a sequence of commands. Returns True if NPC should respond."""
+    original_player_msg_stripped = player_msg.strip()
+
+    if not original_player_msg_stripped:
+        rprint(Text("Please enter a command or a sequence of commands (e.g., /say Hello, /give ItemName).", style="bold yellow"))
+        console.line(1)
+        return False
+
+    if not original_player_msg_stripped.startswith("/"):
+        rprint(Text("All input must start with a command (e.g., /say Hello). Plain text is not processed.", style="bold red"))
+        console.line(1)
+        return False
+
+    command_segments = original_player_msg_stripped.split('/')[1:] # Split by '/' and remove the initial empty string
+    
+    npc_should_respond = False
+    performed_action_descriptions: list[str] = [] # For AI context if no /say is used
+    say_command_executed_this_turn = False
+
+    if not command_segments:
+        rprint(Text("No valid commands found. Ensure commands start with '/'.", style="bold yellow"))
+        return False
+
+    for segment in command_segments:
+        segment_stripped = segment.strip()
+        if not segment_stripped:
+            continue # Skip empty segments that might result from multiple slashes e.g. /say hi //give item
+
+        parts = segment_stripped.split(maxsplit=1)
+        command_verb = parts[0].lower()
+        command_args = parts[1].strip() if len(parts) > 1 else ""
+
+        if command_verb == "say":
+            if not command_args:
+                rprint(Text("Usage: /say <message> (Message cannot be empty)", style="bold yellow"))
+                # If a previous command in the chain made NPC respond, don't override that to False
+                # continue # Allow processing other commands in the chain
+            else:
+                npc.add_dialogue_turn(speaker=player1.name, message=command_args)
+                npc_should_respond = True
+                say_command_executed_this_turn = True
+                performed_action_descriptions = [] # Explicit dialogue provides context, clear previous functional actions
+        
+        elif command_verb == "give":
+            item_name_to_give = command_args
             if not item_name_to_give:
                 rprint(Text("Usage: /give <item_name> (Item name cannot be empty)", style="bold yellow"))
-                return False 
-            elif player1.has_item(item_name_to_give):
-                item_to_give_obj = next((item for item in player1.items if item.name == item_name_to_give), None)
-                if item_to_give_obj and player1.remove_item(item_name_to_give): # remove_item itself prints messages
-                    npc.add_item(item_to_give_obj) # add_item in Character also prints messages
-                    action_description_for_ai = f"I hand the '{item_name_to_give}' over to you."
-                    npc.add_dialogue_turn(speaker=player1.name, message=action_description_for_ai)
-                    # Message about successful give is now handled by Player.remove_item and Character.add_item
-                    # rprint(Text(f"You give the '{item_name_to_give}' to {npc.name}.", style="italic bright_magenta"))
-                    return True 
-                else:
-                    rprint(Text(f"Error: Could not transfer '{item_name_to_give}'. Check inventory or item status.", style="bold red"))
-                    return False 
-            else:
-                rprint(Text(f"You don't have '{item_name_to_give}' in your inventory.", style="bold red"))
-                return False 
-        else:
-            rprint(Text("Usage: /give <item_name>", style="bold yellow"))
-            return False 
-    else: 
-        if not player_msg.strip():
-            rprint(Text("Please type a message or a command.", style="yellow"))
-            console.line(1) # Add a bit of space after the prompt
-            return False 
-        npc.add_dialogue_turn(speaker=player1.name, message=player_msg)
-        return True 
-    # Fallback, should ideally be covered by branches above
-    return False 
+                continue # Try next command in chain
 
-def handle_npc_response(npc: Character, player_object: Player, current_location: Location):
-    """Handles getting and printing the NPC's response."""
+            if not player1.has_item(item_name_to_give):
+                rprint(Text(f"You don't have '{item_name_to_give}' in your inventory to give.", style="bold red"))
+                continue # Try next command in chain
+            
+            # Attempt to get the exact Item object for case consistency and object reference
+            item_to_give_obj = next((item for item in player1.items if item.name.lower() == item_name_to_give.lower()), None)
+            
+            if not item_to_give_obj: # Should be rare if has_item passed, but good for robustness
+                rprint(Text(f"Error: Could not find the precise item object for '{item_name_to_give}' after confirming possession.", style="bold red"))
+                continue
+
+            # NEW Offer Logic:
+            # Set up the offer on the NPC. The NPC's AI must use the 'accept_item_offer' tool to complete the transfer.
+            npc.active_offer = {
+                "item_name": item_to_give_obj.name,
+                "item_object": item_to_give_obj, # Pass the actual item object
+                "offered_by_name": player1.name, # Store who made the offer
+                "offered_by_object": player1 # Store the player object for later verification
+            }
+            npc_should_respond = True # NPC should react to being offered an item
+            performed_action_descriptions.append(f"*I hold out the {item_to_give_obj.name} for you. Do you accept?*")
+            rprint(Text.assemble(Text("EVENT: ", style="dim white"), Text(f"{player1.name} offers {item_to_give_obj.name} to {npc.name}.", style="white")))
+
+        else:
+            rprint(Text(f"Unknown command: '/{command_verb}'. Valid commands are /say and /give.", style="bold red"))
+            # If player types "/nonsense", we probably don't want NPC to respond unless a /say was also there.
+            # If npc_should_respond is already true from a /say, let it be. If not, this unknown command doesn't trigger it.
+
+    # If actions were performed (like /give) but no /say command provided context in this turn,
+    # add the functional descriptions for the AI.
+    if performed_action_descriptions and npc_should_respond:
+        functional_message_for_ai = " ".join(performed_action_descriptions)
+        # If a /say command was executed, this functional message should ideally be a new, distinct entry
+        # or appended to the existing user message. For now, let's add it as part of the same user turn if there was dialogue.
+        # The current add_dialogue_turn will just add it as if the player said it.
+        # This might look a bit odd in history if there was also a /say, e.g.:
+        # User: Hello there. *I offer the item to you.*
+        # This is acceptable for now to ensure AI gets the info.
+        npc.add_dialogue_turn(speaker=player1.name, message=functional_message_for_ai)
+        # This ensures the AI is aware of the actions. npc_should_respond is already true.
+
+    # If no command successfully set npc_should_respond to True (e.g. only unknown commands, or failed /give with no /say)
+    if not npc_should_respond and original_player_msg_stripped: # original_player_msg_stripped ensures we don't say this for initially empty input
+        # Check if any command was attempted. If command_segments was populated but npc_should_respond is false,
+        # it means all attempted commands failed or were unrecognized without a successful /say.
+        if command_segments and not any(s.strip().lower().startswith("say") for s in command_segments):
+             rprint(Text("No action taken. Ensure your commands are valid (e.g., /say or /give) and arguments are correct.", style="yellow"))
+        # If it started with /say but message was empty, that error is handled above. 
+        # This path is for when input was like "/unknown_cmd" or "/give non_existent_item" with no /say.
+
+    return npc_should_respond
+
+def handle_npc_response(npc: Character, player_object: Player, current_location: Location) -> str | None:
+    """Handles getting and printing the NPC's response. Returns the AI's spoken response string or None."""
     ai_response = npc.get_ai_response(player_object=player_object, current_location=current_location)
     console.line(1)
 
@@ -123,13 +193,16 @@ def handle_npc_response(npc: Character, player_object: Player, current_location:
         npc_turn_text.append(ai_response)
         rprint(npc_turn_text)
         # Add to history only if it's a meaningful spoken response, not just an internal thought prompt
-        if ai_response.strip() and not ai_response.startswith(f"[{npc.name}]"):
-            npc.add_dialogue_turn(speaker=npc.name, message=ai_response)
+        # This is already handled by character.get_ai_response adding its own spoken part to history.
+        # if ai_response.strip() and not ai_response.startswith(f"[{npc.name}]"):
+        #     npc.add_dialogue_turn(speaker=npc.name, message=ai_response)
+        return ai_response # Return the response for GM assessment
     else:
         # This case might mean an error in get_ai_response or a deliberate empty response.
         # get_ai_response already prints errors.
         # If it's a deliberate empty (None) response and we want a placeholder:
         rprint(Text(f"[{npc.name} is silent or an error occurred determining a response.]", style="italic red"))
+        return None # Return None if no response or error
 
 def display_interaction_state(player1: Player, npc: Character, old_player_items: list[str], old_npc_items: list[str], old_disposition: str):
     """Displays the state of player and NPC items and NPC disposition after an interaction."""
@@ -193,26 +266,67 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
             # Provide epilogue for quitting
             epilogue = game_master.provide_epilogue(scenario, player1, npc, "PLAYER_QUIT")
             rprint(Panel(Text(epilogue, justify="left"), title="The Story Pauses...", border_style="bold yellow", expand=False))
-            if npc: npc.add_dialogue_turn(speaker="Game Master", message=epilogue)
+            # if npc: npc.add_dialogue_turn(speaker="Game Master", message=epilogue) # Epilogue added to history by GM later if needed
             console.line()
             break
 
-        npc_should_respond_this_turn = handle_player_action(player1, npc, player_msg)
+        action_processed_successfully = handle_player_action(player1, npc, player_msg)
+
+        if not action_processed_successfully:
+            # Player input was invalid or a command that failed without dialogue.
+            # handle_player_action already printed the relevant error message.
+            # Loop back to get new player input.
+            console.line() # Add a little space before re-prompting
+            continue
+        
+        # Get NPC's response *before* GM disposition assessment for this turn's full context
+        # The npc_response variable will store the textual response of the NPC for the GM
+        npc_actual_response_text = None 
 
         # NPC's turn (if applicable)
-        if npc_should_respond_this_turn:
-            handle_npc_response(npc, player1, current_location)
+        if action_processed_successfully: # If true, it means player did something that might elicit a response
+            npc_actual_response_text = handle_npc_response(npc, player1, current_location) 
         else:
-            # Specific handling for spacing if NPC doesn't respond due to failed command, etc.
-            # handle_player_action takes care of its own spacing for empty messages.
-            # If /give command failed, handle_player_action prints a message. Add a line for visual separation.
-            if player_msg.lower().startswith("/give "): # and not npc_should_respond_this_turn is implied
-                 console.line(1) # Add a bit of space after failed /give command output
-                 # We might want to skip display_interaction_state if the command itself failed and no game state changed significantly
-                 # For now, let it display to show the (unchanged) state.
-                 # continue # Option to skip display_interaction_state for failed commands
+            # This else block might not be strictly necessary anymore if 'continue' is used for failed actions.
+            # However, handle_player_action returns false for empty input, or input not starting with /,
+            # or for failed commands *without dialogue*. In these cases, we `continue` above.
+            # If handle_player_action were to return true but somehow NPC shouldn't respond (which is not current design),
+            # this block would be hit. For now, it is defensive.
+            pass # No NPC response needed if action_processed_successfully was false and we didn't continue.
 
-        # Display state changes after both player and NPC (if any) have acted
+        # Game Master assesses disposition change after player action and NPC response (if any)
+        # Ensure player_msg for GM is the actual dialogue, not the /give command text itself
+        # If player_msg was a /give command, use the action_description_for_ai that was put into history
+        # However, handle_player_action already adds the correct user message to history for the GM.
+        # The GM can pull from the history, or we pass player_msg and npc_actual_response_text directly.
+        # For simplicity, let's ensure player_msg sent to GM is the one AI sees (already handled by add_dialogue_turn)
+        # The interaction history will have the player's turn. The npc_actual_response_text is the npc's direct reply.
+        
+        # Capture the last player message from history for the GM, as handle_player_action might modify it (e.g. for /give)
+        # Or, more simply, pass the original player_msg and the npc_actual_response_text directly.
+        # Let's pass player_msg (original input) and npc_actual_response_text.
+        
+        should_change_disp, new_disp, reason_for_change = game_master.assess_disposition_change(
+            player=player1, 
+            npc=npc, 
+            player_message=player_msg, # Original player input for this turn
+            npc_response=npc_actual_response_text # NPC's verbal response this turn
+        )
+
+        if should_change_disp and new_disp:
+            old_disposition_for_gm_change = npc.disposition # Store before GM changes it
+            npc.disposition = new_disp
+            # Log the GM's decision to interaction_history for full context if needed for future AI reference
+            gm_log_message = f"SYSTEM_OBSERVATION (Game Master): NPC disposition changed to '{new_disp}'. Reason: {reason_for_change}"
+            npc.interaction_history.add_entry(role="system", content=gm_log_message)
+            # The display_interaction_state will show the change, but we can add a specific GM note if desired
+            rprint(Text(f"GAME MASTER: {npc.name}'s disposition is now '{new_disp}'. (Reason: {reason_for_change})", style="italic bright_magenta"))
+            # We need to update old_disposition_for_turn if GM changed it, so display_interaction_state highlights it correctly.
+            # However, display_interaction_state compares with the start-of-turn disposition. 
+            # The GM change will be reflected as a change within the turn.
+            # The `old_disposition_for_turn` is correctly what it was at the very start of this interaction_count.
+
+        # Display state changes after both player and NPC (if any) have acted, and GM assessment
         display_interaction_state(player1, npc, old_player_items_for_turn, old_npc_items_for_turn, old_disposition_for_turn)
             
         # Check victory condition
@@ -246,18 +360,44 @@ def display_final_summary(player1: Player, npc: Character):
     console.rule("Full Conversation History", style="bold white")
     console.line(1)
     history_text = Text()
-    if not npc.conversation_history:
+    full_history = npc.interaction_history.get_llm_history()
+    if not full_history:
             history_text.append("(No conversation took place)", style="italic dim white")
     else:
-        num_turns = len(npc.conversation_history)
-        for i, turn in enumerate(npc.conversation_history):
-            speaker_style = "bold blue" if turn['speaker'] == player1.name else "bold green"
-            history_text.append(f"{turn['speaker']}: ", style=speaker_style)
-            history_text.append(f"{turn['message']}")
-            # Add double newline for better readability between turns, except for the last message
-            if i < num_turns - 1: 
-                history_text.append("\n\n") # Using escaped newline for Text object
+        dialogue_turns = []
+        for entry in full_history:
+            if entry["role"] == "user":
+                dialogue_turns.append({"speaker": player1.name, "message": entry["content"], "style": "bold blue"})
+            elif entry["role"] == "assistant" and entry["content"]:
+                # Only include assistant messages that have actual content (spoken responses)
+                # Exclude tool call requests or purely functional messages without text for the player.
+                if not entry.get("tool_calls"): # If it has tool_calls, it's a request, not spoken dialogue yet.
+                    dialogue_turns.append({"speaker": npc.name, "message": entry["content"], "style": "bold green"})
+            # We are not displaying system messages or tool results in the final summary for brevity,
+            # but they are in npc.interaction_history if needed for debugging.
+
+        if not dialogue_turns:
+            history_text.append("(No actual dialogue was exchanged)", style="italic dim white")
+        else:
+            num_dialogue_turns = len(dialogue_turns)
+            for i, turn in enumerate(dialogue_turns):
+                history_text.append(f"{turn['speaker']}: ", style=turn['style'])
+                history_text.append(f"{turn['message']}")
+                if i < num_dialogue_turns - 1:
+                    history_text.append("\n\n")
+
     rprint(Panel(history_text, title=f"History with {npc.name}", border_style="dim white"))
+
+    # Raw Interaction Log Dump for Debugging
+    console.line(1)
+    console.rule("Raw Interaction Log (Debug)", style="bold yellow")
+    raw_history = npc.interaction_history.get_llm_history()
+    if not raw_history:
+        rprint(Text("(Interaction log is empty)", style="dim"))
+    else:
+        for i, entry in enumerate(raw_history):
+            rprint(f"[yellow]Log Entry {i}:[/yellow] {entry}")
+    console.line(1)
 
 def start_game(scenario_name_to_load: str):
     """Initializes and runs the main game loop for the specified scenario."""
@@ -276,7 +416,8 @@ def start_game(scenario_name_to_load: str):
         # Add GM's introduction to NPC's conversation history for context
         # This is important so the NPC is aware of how the game started.
         if npc: # Ensure NPC exists before trying to add to its history
-            npc.add_dialogue_turn(speaker="Game Master", message=scenario_introduction)
+            # npc.add_dialogue_turn(speaker="Game Master", message=scenario_introduction) # OLD way
+            npc.interaction_history.add_entry(role="system", content=f"GAME_MASTER_NARRATION: {scenario_introduction}")
 
         display_initial_state(player1, npc, current_location)
         run_interaction_loop(player1, npc, current_location, victory_condition, game_master, scenario_obj)

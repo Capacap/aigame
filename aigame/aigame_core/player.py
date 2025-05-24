@@ -1,6 +1,8 @@
 from __future__ import annotations
 from .item import Item # Corrected import
 from .character import Character # Corrected import
+from rich.text import Text # Corrected
+from rich import print as rprint # Corrected
 
 class Player:
     """
@@ -34,9 +36,9 @@ class Player:
         try:
             if item not in self.items: # Comparison works due to Item.__eq__
                 self.items.append(item)
-                print(f"Added '{item.name}' to {self.name}'s inventory.") # Use item.name
+                rprint(Text.assemble(Text("EVENT: ", style="dim white"), Text(f"'{item.name}' added to {self.name}'s inventory.", style="white")))
             else:
-                print(f"'{item.name}' is already in {self.name}'s inventory.") # Use item.name
+                rprint(Text.assemble(Text("INFO: ", style="dim yellow"), Text(f"'{item.name}' is already in {self.name}'s inventory.", style="yellow")))
         except Exception as e:
             print(f"Error adding item for {self.name}: {e}")
 
@@ -53,10 +55,10 @@ class Player:
         try:
             if item_identifier in self.items: # Comparison works due to Item.__eq__
                 self.items.remove(item_identifier) # remove() will find the matching item
-                print(f"Removed '{item_name_for_message}' from {self.name}'s inventory.")
+                rprint(Text.assemble(Text("EVENT: ", style="dim white"), Text(f"'{item_name_for_message}' removed from {self.name}'s inventory.", style="white")))
                 return True
             else:
-                print(f"'{item_name_for_message}' not found in {self.name}'s inventory.")
+                rprint(Text.assemble(Text("INFO: ", style="dim red"), Text(f"'{item_name_for_message}' not found in {self.name}'s inventory.", style="red")))
                 return False
         except Exception as e:
             print(f"Error removing item for {self.name}: {e}")
