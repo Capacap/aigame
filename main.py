@@ -1,6 +1,8 @@
 from player import Player
-from character import Character
-from item import Item
+from character import Character, load_character_from_file
+from item import Item, load_item_from_file
+from location import Location, load_location_from_file
+import json
 
 # Rich imports
 from rich import print as rprint
@@ -10,39 +12,59 @@ from rich.console import Console
 
 console = Console()
 
+# Game constants
+CHARACTERS_BASE_PATH = "aigame/data/characters"
+ITEMS_BASE_PATH = "aigame/data/items"
+LOCATIONS_BASE_PATH = "aigame/data/locations"
+NPC_NAME_TO_LOAD = "Archivist Silas"
+PLAYER_STARTING_ITEM_NAME = "translation cypher"
+STARTING_LOCATION_NAME = "Archive Study"
+
 def initialize_game_entities():
-    """Initializes the player and NPC for the game."""
+    """Initializes the player, NPC, and starting location for the game."""
     player1 = Player(name="Alex the Scholar")
-    player1.add_item(Item(name="translation cypher", description="A device to translate ancient languages."))
+    
+    # Load player's starting item
+    try:
+        starting_item = load_item_from_file(PLAYER_STARTING_ITEM_NAME, ITEMS_BASE_PATH)
+        player1.add_item(starting_item)
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
+        rprint(f"[bold red]Critical Error: Failed to load player starting item '{PLAYER_STARTING_ITEM_NAME}' from '{ITEMS_BASE_PATH}'. Details: {e}[/bold red]")
+        raise SystemExit(f"Error loading starting item '{PLAYER_STARTING_ITEM_NAME}': {e}")
 
-    npc = Character(
-        name="Archivist Silas",
-        personality=("A kind and knowledgeable archivist, passionate about history and discovery. "
-                       "Initially a bit preoccupied and formal, but genuinely appreciates those who share his love for knowledge "
-                       "or offer assistance with his research. He is willing to share resources with those he deems trustworthy and helpful."),
-        goal=("To access and study the newly unsealed 'Chamber of Echoes' within the archives. He possesses the 'Echo Chamber Key' "
-              "but is also trying to find a 'translation cypher' for some ancient tablets he found, which he believes are crucial for understanding the Chamber's contents."),
-        relationship_to_player="Neutral but polite; open to scholarly individuals.",
-        items=[
-            Item(name="Echo Chamber Key", description="A heavy iron key with strange symbols."),
-            Item(name="reading spectacles", description="Slightly smudged, but essential for Silas."),
-            Item(name="dusty tome", description="A very old book with a faded cover.")
-        ]
-    )
-    return player1, npc
+    # Load NPC
+    try:
+        npc = load_character_from_file(NPC_NAME_TO_LOAD, CHARACTERS_BASE_PATH)
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e: # Combined error catching for character loading
+        rprint(f"[bold red]Critical Error: Failed to load or parse character '{NPC_NAME_TO_LOAD}' from '{CHARACTERS_BASE_PATH}'. Details: {e}[/bold red]")
+        raise SystemExit(f"Error loading character '{NPC_NAME_TO_LOAD}': {e}")
+    
+    # Load starting location
+    try:
+        current_location = load_location_from_file(STARTING_LOCATION_NAME, LOCATIONS_BASE_PATH)
+    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
+        rprint(f"[bold red]Critical Error: Failed to load starting location '{STARTING_LOCATION_NAME}' from '{LOCATIONS_BASE_PATH}'. Details: {e}[/bold red]")
+        raise SystemExit(f"Error loading location '{STARTING_LOCATION_NAME}': {e}")
 
-def display_initial_state(player, npc):
-    """Displays the initial state of the player and NPC."""
+    return player1, npc, current_location
+
+def display_initial_state(player, npc, location):
+    """Displays the initial state of the player, NPC, and current location."""
+    # Display Location first
+    rprint(Panel(Text(f"{location.name}\n\n{location.description}"), title="Current Location", border_style="yellow", expand=False))
+    console.line()
+
     player_state_text = Text()
     player_state_text.append(f"Name: {player.name}\\n", style="bold")
     player_state_text.append(f"Items: {', '.join(item.name for item in player.items) if player.items else 'Nothing'}")
     rprint(Panel(player_state_text, title="Player Initial State", border_style="blue"))
     console.line()
+
     rprint(Panel(str(npc), title="Character Initial State", border_style="green"))
     console.line()
-    rprint(Panel("Starting Interactive Conversation with Silas... (Type 'quit' to end)", title_align="center", border_style="dim white"))
+    rprint(Panel(f"Starting Interactive Conversation with {npc.name}... (Type 'quit' to end)", title_align="center", border_style="dim white"))
 
-def run_interaction_loop(player1, npc, key_to_obtain):
+def run_interaction_loop(player1, npc, key_to_obtain, current_location):
     """Handles the main interaction loop between the player and NPC."""
     interaction_count = 0
     while True:
@@ -50,10 +72,9 @@ def run_interaction_loop(player1, npc, key_to_obtain):
         console.rule(f"Interaction {interaction_count}", style="bold magenta")
         console.line(1)
         
-        # Capture state before player action for this turn's comparison
         old_disposition_for_turn = npc.relationship_to_player
-        old_npc_items_for_turn = [item.name for item in npc.items] # Store names for comparison
-        old_player_items_for_turn = [item.name for item in player1.items] # Store names for comparison
+        old_npc_items_for_turn = [item.name for item in npc.items]
+        old_player_items_for_turn = [item.name for item in player1.items]
 
         player_prompt_text = Text()
         player_prompt_text.append(f"{player1.name} (type '/give <item>' or 'quit' to end): ", style="bold blue")
@@ -66,7 +87,7 @@ def run_interaction_loop(player1, npc, key_to_obtain):
         npc_should_respond_this_turn = handle_player_action(player1, npc, player_msg)
 
         if npc_should_respond_this_turn:
-            handle_npc_response(npc, player1)
+            handle_npc_response(npc, player1, current_location) # Pass current_location
         else:
             if not player_msg.lower().startswith("/give ") and not player_msg.strip():
                 pass
@@ -78,7 +99,7 @@ def run_interaction_loop(player1, npc, key_to_obtain):
 
         display_interaction_state(player1, npc, old_player_items_for_turn, old_npc_items_for_turn, old_disposition_for_turn)
             
-        if not npc.has_item(key_to_obtain) and player1.has_item(key_to_obtain): # has_item check by string name
+        if not npc.has_item(key_to_obtain) and player1.has_item(key_to_obtain):
             success_text = Text(f"SUCCESS! {player1.name} obtained the '{key_to_obtain}' from {npc.name}!", style="bold bright_green")
             disposition_text = Text(f"{npc.name}'s final disposition: {npc.relationship_to_player}", style="green")
             rprint(Panel(Text.assemble(success_text, "\n", disposition_text), title="Outcome", border_style="bright_green"))
@@ -89,25 +110,25 @@ def display_interaction_state(player1, npc, old_player_items, old_npc_items, old
     console.line(1) 
     state_panel_content = Text()
     current_player_items_str = ", ".join(item.name for item in player1.items) if player1.items else 'None'
-    state_panel_content.append(f"Player ({player1.name}) Items: {current_player_items_str}\n", style="blue")
+    state_panel_content.append(f"Player ({player1.name}) Items: {current_player_items_str}\\n", style="blue")
     if old_player_items != [item.name for item in player1.items]:
-        state_panel_content.append(f"SYSTEM: Player inventory changed. Old: {old_player_items}, New: {[item.name for item in player1.items]}\n", style="dim bright_blue")
+        state_panel_content.append(f"SYSTEM: Player inventory changed. Old: {old_player_items}, New: {[item.name for item in player1.items]}\\n", style="dim bright_blue")
     
     current_npc_items_str = ", ".join(item.name for item in npc.items) if npc.items else 'None'
-    state_panel_content.append(f"Character ({npc.name}) Items: {current_npc_items_str}\n", style="green")
+    state_panel_content.append(f"Character ({npc.name}) Items: {current_npc_items_str}\\n", style="green")
     if old_npc_items != [item.name for item in npc.items]:
-            state_panel_content.append(f"SYSTEM: NPC inventory changed. Old: {old_npc_items}, New: {[item.name for item in npc.items]}\n", style="dim bright_green")
+            state_panel_content.append(f"SYSTEM: NPC inventory changed. Old: {old_npc_items}, New: {[item.name for item in npc.items]}\\n", style="dim bright_green")
     
     state_panel_content.append(f"Character ({npc.name}) Disposition: {npc.relationship_to_player}", style="green")
     if old_disposition != npc.relationship_to_player:
-        state_panel_content.append(f"\nSYSTEM: NPC disposition changed from '{old_disposition}' to '{npc.relationship_to_player}'.", style="bright_cyan")
+        state_panel_content.append(f"\\nSYSTEM: NPC disposition changed from '{old_disposition}' to '{npc.relationship_to_player}'.", style="bright_cyan")
     
     rprint(Panel(state_panel_content, title="State After Interaction", expand=False, border_style="yellow"))
     console.line()
 
-def handle_npc_response(npc, player_object):
+def handle_npc_response(npc, player_object, current_location):
     """Handles getting and printing the NPC's response."""
-    ai_response = npc.get_ai_response(player_object=player_object)
+    ai_response = npc.get_ai_response(player_object=player_object, current_location=current_location) # Pass current_location
     console.line(1)
 
     if ai_response:
@@ -128,7 +149,7 @@ def handle_player_action(player1, npc, player_msg):
             item_name_to_give = command_parts[1].strip()
             if not item_name_to_give:
                 rprint(Text("Usage: /give <item_name> (Item name cannot be empty)", style="bold yellow"))
-                return False # NPC should not respond
+                return False 
             elif player1.has_item(item_name_to_give):
                 item_to_give_obj = next((item for item in player1.items if item.name == item_name_to_give), None)
                 if item_to_give_obj and player1.remove_item(item_name_to_give):
@@ -136,42 +157,32 @@ def handle_player_action(player1, npc, player_msg):
                     action_description_for_ai = f"I hand the '{item_name_to_give}' over to you."
                     npc.add_dialogue_turn(speaker=player1.name, message=action_description_for_ai)
                     rprint(Text(f"You give the '{item_name_to_give}' to {npc.name}.", style="italic bright_magenta"))
-                    return True # NPC should respond
+                    return True 
                 else:
                     rprint(Text(f"Error: Could not remove '{item_name_to_give}' from your inventory despite possessing it.", style="bold red"))
-                    return False # NPC should not respond
+                    return False 
             else:
                 rprint(Text(f"You don't have '{item_name_to_give}' in your inventory.", style="bold red"))
-                return False # NPC should not respond
+                return False 
         else:
             rprint(Text("Usage: /give <item_name>", style="bold yellow"))
-            return False # NPC should not respond
-    else: # Regular dialogue
+            return False 
+    else: 
         if not player_msg.strip():
             rprint(Text("Please type a message or a command.", style="yellow"))
             console.line(1)
-            return False # NPC should not respond
+            return False 
         npc.add_dialogue_turn(speaker=player1.name, message=player_msg)
-        return True # NPC should respond
-    return False # Default: NPC should not respond if no other condition met
+        return True 
+    return False 
 
 def main_game_loop():
     try:
-        player1, npc = initialize_game_entities()
-        display_initial_state(player1, npc)
-        
-        player_state_text = Text()
-        player_state_text.append(f"Name: {player1.name}\n", style="bold")
-        player_state_text.append(f"Items: {', '.join(item.name for item in player1.items) if player1.items else 'Nothing'}")
-        rprint(Panel(player_state_text, title="Player Initial State", border_style="blue"))
-        console.line()
-
-        rprint(Panel(str(npc), title="Character Initial State", border_style="green"))
-        console.line()
-        rprint(Panel("Starting Interactive Conversation with Silas... (Type 'quit' to end)", title_align="center", border_style="dim white"))
+        player1, npc, current_location = initialize_game_entities()
+        display_initial_state(player1, npc, current_location)
 
         key_to_obtain = "Echo Chamber Key"
-        run_interaction_loop(player1, npc, key_to_obtain)
+        run_interaction_loop(player1, npc, key_to_obtain, current_location)
 
         display_final_summary(player1, npc)
 
@@ -188,7 +199,7 @@ def display_final_summary(player1, npc):
     console.rule("Final States", style="bold white")
     console.line(1)
     player_final_text = Text()
-    player_final_text.append(f"Name: {player1.name}\n", style="bold")
+    player_final_text.append(f"Name: {player1.name}\\n", style="bold")
     player_final_text.append(f"Items: {', '.join(item.name for item in player1.items) if player1.items else 'Nothing'}")
     rprint(Panel(player_final_text, title="Final Player State", border_style="blue"))
     console.line(1)
@@ -207,7 +218,7 @@ def display_final_summary(player1, npc):
             speaker_style = "bold blue" if turn['speaker'] == player1.name else "bold green"
             history_text.append(f"{turn['speaker']}: ", style=speaker_style)
             history_text.append(f"{turn['message']}")
-            if i < num_turns - 1: # Only add double newline if it's not the last message
+            if i < num_turns - 1: 
                 history_text.append("\n\n")
     rprint(Panel(history_text, title=f"History with {npc.name}", border_style="dim white"))
 
