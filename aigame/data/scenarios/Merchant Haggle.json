@@ -1,0 +1,12 @@
+{
+  "name": "Merchant Haggle",
+  "description": "The player, Alex the Scholar, encounters Shady Sal at a bazaar stall. Sal has an Ancient Amulet that Alex needs. Alex must try to acquire it, perhaps by haggling or trading.",
+  "location_name": "Bazaar Stall",
+  "player_character_name": "Alex the Scholar",
+  "npc_character_name": "Shady Sal",
+  "victory_condition": {
+    "type": "PLAYER_OBTAINS_ITEM",
+    "item_name": "Ancient Amulet",
+    "from_npc": true
+  }
+} 

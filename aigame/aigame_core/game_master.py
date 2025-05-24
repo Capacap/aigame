@@ -1,0 +1,133 @@
+# game_master.py
+from __future__ import annotations
+import litellm
+import json # For potentially formatting parts of the prompt or if GM needs to handle complex JSON in future
+from .player import Player
+from .character import Character
+from .scenario import Scenario # Added import for Scenario type hint
+# Location might be needed if future GMs consider environment, but not for current victory condition
+# from .location import Location 
+
+from rich import print as rprint
+from rich.text import Text
+
+class GameMaster:
+    def __init__(self):
+        # The GM could have its own personality or instructions, but for now, it's a neutral evaluator.
+        pass
+
+    def introduce_scenario(self, scenario: Scenario) -> str:
+        """Generates an introductory narration for the given scenario."""
+        if not isinstance(scenario, Scenario):
+            raise ValueError("Invalid scenario object provided to introduce_scenario.")
+        
+        # For now, a simple formatted introduction. This could be expanded.
+        # Using f-string for clarity and rich Text for potential future styling within the string.
+        intro_text = (
+            f"Welcome, adventurer, to \"{scenario.name}\"!\n\n"
+            f"{scenario.description}"
+        )
+        return intro_text
+
+    def provide_epilogue(self, scenario: Scenario, player: Player, npc: Character, game_outcome: str) -> str:
+        """Generates a concluding narration for the scenario based on the outcome."""
+        if not isinstance(scenario, Scenario):
+            raise ValueError("Invalid scenario object provided to provide_epilogue.")
+        if not isinstance(player, Player):
+            raise ValueError("Invalid player object provided to provide_epilogue.")
+        if not isinstance(npc, Character):
+            raise ValueError("Invalid NPC object provided to provide_epilogue.")
+        if not isinstance(game_outcome, str) or not game_outcome:
+            raise ValueError("Game outcome must be a non-empty string.")
+
+        epilogue_text = f"Thus concludes \"{scenario.name}\".\n\n"
+
+        if game_outcome == "VICTORY":
+            epilogue_text += f"Through skill and determination, {player.name} successfully achieved the objective! "
+            # Could add more details based on victory condition, player/npc items, npc disposition etc.
+            epilogue_text += f"{npc.name} is now {npc.disposition}. " 
+            # Check if the victory involved obtaining an item
+            vc = scenario.victory_condition
+            if vc.get("type") == "PLAYER_OBTAINS_ITEM" and vc.get("item_name"):
+                epilogue_text += f"{player.name} is now in possession of the coveted {vc.get("item_name")}."
+            epilogue_text += "\nA chapter closes, but the story continues..."
+        elif game_outcome == "PLAYER_QUIT":
+            epilogue_text += f"{player.name} decided to walk away from this particular path. "
+            epilogue_text += f"The threads of fate remain untangled, and {npc.name} is left to ponder what might have been, their disposition {npc.disposition}. "
+            epilogue_text += "Perhaps another time, another place?"
+        else:
+            epilogue_text += "The story ends, but its echoes linger..."
+        
+        return epilogue_text
+
+    def _format_state_for_llm(self, player: Player, npc: Character, victory_condition: dict) -> str:
+        player_items_str = ", ".join(item.name for item in player.items) if player.items else "None"
+        npc_items_str = ", ".join(item.name for item in npc.items) if npc.items else "None"
+        
+        # Describe the victory condition clearly
+        vc_type = victory_condition.get("type")
+        vc_item_name = victory_condition.get("item_name")
+        vc_from_npc = victory_condition.get("from_npc", False)
+
+        vc_description = "Unknown victory condition."
+        if vc_type == "PLAYER_OBTAINS_ITEM":
+            vc_description = f"The player ('{player.name}') must possess the item '{vc_item_name}'."
+            if vc_from_npc:
+                vc_description += f" Additionally, the NPC ('{npc.name}') must no longer possess this item."
+        # Future victory condition descriptions can be added here
+
+        state_description = (
+            f"Current Game State:\n"
+            f"- Player: {player.name}\n  - Items: [{player_items_str}]\n"
+            f"- NPC: {npc.name}\n  - Items: [{npc_items_str}]\n  - Disposition: {npc.disposition}\n"
+            f"\nVictory Condition to Evaluate:\n{vc_description}"
+        )
+        return state_description
+
+    def evaluate_victory_condition(
+        self, 
+        player: Player, 
+        npc: Character, 
+        # current_location: Location, # Not strictly needed for current VC, but good for future GM tasks
+        victory_condition: dict
+    ) -> bool:
+        """
+        Uses an LLM to evaluate if the victory condition has been met.
+        """
+        state_prompt = self._format_state_for_llm(player, npc, victory_condition)
+
+        system_message = (
+            "You are a meticulous Game Master AI. Your sole task is to evaluate if a specific, predefined "
+            "victory condition has been met based on the current game state provided. "
+            "Do not offer opinions, suggestions, or any narrative. "
+            "Consider only the facts presented against the victory condition. "
+            "Respond with only the word 'true' if the condition is met, or 'false' if it is not."
+        )
+        
+        messages = [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": state_prompt + "\n\nHas this victory condition been met based *strictly* on the rules and state provided? (Respond with only 'true' or 'false')"}
+        ]
+
+        try:
+            # rprint(f"[grey50]GM Prompt to LLM:\nSystem: {system_message}\nUser: {messages[1]['content']}[/grey50]") # For debugging
+            response = litellm.completion(
+                model="openai/gpt-4.1-mini", # Or another suitable model
+                messages=messages,
+                max_tokens=5, # Should only need 'true' or 'false'
+                temperature=0.0 # We want deterministic evaluation
+            )
+            raw_response_content = response.choices[0].message.content.strip().lower()
+            rprint(Text(f"GM AI raw evaluation: '{raw_response_content}'", style="dim yellow"))
+
+            if raw_response_content == "true":
+                return True
+            elif raw_response_content == "false":
+                return False
+            else:
+                rprint(Text(f"[bold red]GM AI returned an unexpected response: '{raw_response_content}'. Defaulting to false.[/bold red]"))
+                return False
+
+        except Exception as e:
+            rprint(Text(f"[bold red]Error during Game Master AI evaluation: {e}. Defaulting to false.[/bold red]"))
+            return False 

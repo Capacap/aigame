@@ -1,0 +1,12 @@
+{
+    "name": "Echo Chamber Quest",
+    "description": "Assist Archivist Silas in accessing the Chamber of Echoes by trading a translation cypher for the Echo Chamber Key.",
+    "location_name": "Archive Study",
+    "player_character_name": "Alex the Scholar",
+    "npc_character_name": "Archivist Silas",
+    "victory_condition": {
+        "type": "PLAYER_OBTAINS_ITEM",
+        "item_name": "Echo Chamber Key",
+        "from_npc": true
+    }
+} 

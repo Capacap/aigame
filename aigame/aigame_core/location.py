@@ -1,4 +1,4 @@
-# location.py
+from __future__ import annotations
 import json
 from rich import print as rprint
 
@@ -11,7 +11,6 @@ class Location:
 
         self.name: str = name
         self.description: str = description
-        # Future attributes like exits, items_in_location, characters_in_location can be added here
 
     def __str__(self) -> str:
         return f"{self.name}\n{self.description}"
@@ -20,7 +19,7 @@ class Location:
         return f"Location(name='{self.name}', description='{self.description}')"
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'Location':
+    def from_dict(cls, data: dict) -> Location:
         if not isinstance(data, dict):
             raise ValueError("Location data must be a dictionary.")
         
@@ -33,21 +32,6 @@ class Location:
         return cls(name=name, description=description)
 
 def load_location_from_file(location_name: str, base_directory_path: str) -> Location:
-    """
-    Loads a single location definition from a JSON file named after the location.
-
-    Args:
-        location_name (str): The name of the location (and the JSON file, e.g., "Archive Study.json").
-        base_directory_path (str): The base directory where location JSON files are stored.
-
-    Returns:
-        Location: A Location object.
-        
-    Raises:
-        FileNotFoundError: If the JSON file does not exist.
-        json.JSONDecodeError: If the file is not valid JSON.
-        ValueError: If location data is malformed or missing required fields.
-    """
     file_path = f"{base_directory_path.rstrip('/')}/{location_name}.json"
     
     try:

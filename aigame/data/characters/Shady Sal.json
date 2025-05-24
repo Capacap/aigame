@@ -1,0 +1,9 @@
+{
+  "name": "Shady Sal",
+  "personality": "A cunning and opportunistic merchant who speaks with a folksy charm but always aims for the highest profit. Relishes a good haggle and might respect a persistent bargainer, but won't give things away easily. Secretly enjoys clever wordplay.",
+  "goal": "To sell the Ancient Amulet for the best possible price, or trade it for something of equal or greater perceived value.",
+  "disposition": "Neutral but watchful, sizing up the player as a potential customer.",
+  "items": [
+    "Ancient Amulet"
+  ]
+} 

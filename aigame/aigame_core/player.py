@@ -1,5 +1,6 @@
-from item import Item # Import the Item class
-from character import Character # Import Character class
+from __future__ import annotations
+from .item import Item # Corrected import
+from .character import Character # Corrected import
 
 class Player:
     """
@@ -76,29 +77,46 @@ class Player:
 if __name__ == '__main__':
     try:
         # Player creation
-        player1 = Player(character_data=Character(name="Hero", items=[]))
+        # This test code will need adjustment if Character/Item are also moved before Player is tested stand-alone
+        # For now, assuming Character and Item are accessible for this test.
+        # A more robust test would mock these or use simple versions if run standalone.
+        # from .character import Character # Would be needed if running standalone
+        # from .item import Item # Would be needed if running standalone
+        
+        # Minimal Character mock for testing Player constructor if Character is not fully available/moved yet
+        class MockCharacter:
+            def __init__(self, name, items):
+                self.name = name
+                self.items = items
+
+        class MockItem:
+            def __init__(self, name, description=""):
+                self.name = name
+                self.description = description
+            def __eq__(self, other):
+                if isinstance(other, MockItem): return self.name == other.name
+                if isinstance(other, str): return self.name == other
+                return False
+            def __hash__(self):
+                return hash(self.name)
+
+        player1 = Player(character_data=MockCharacter(name="Hero", items=[]))
         print(player1)
 
-        # Add items - now creating Item objects
-        hp_potion = Item(name="health potion", description="Restores a bit of health.")
-        game_map = Item(name="map", description="Shows the layout of the current area.")
+        hp_potion = MockItem(name="health potion", description="Restores a bit of health.")
+        game_map = MockItem(name="map", description="Shows the layout of the current area.")
         player1.add_item(hp_potion)
         player1.add_item(game_map)
-        player1.add_item(hp_potion) # Try adding a duplicate
+        player1.add_item(hp_potion) 
         print(player1)
 
-        # Check for items
-        print(f"\nPlayer has 'map': {player1.has_item('map')}") # Check by name string
+        print(f"\nPlayer has 'map': {player1.has_item('map')}")
         print(f"Player has 'sword': {player1.has_item('sword')}")
-        print(f"Player has health potion object: {player1.has_item(hp_potion)}") # Check by Item object
+        print(f"Player has health potion object: {player1.has_item(hp_potion)}")
 
-        # Remove items
-        player1.remove_item("health potion") # Remove by name string
-        player1.remove_item(Item(name="sword")) # Try removing an item not present, by Item object
+        player1.remove_item("health potion") 
+        player1.remove_item(MockItem(name="sword")) 
         print(player1)
-
-        # Test invalid instantiation
-        # invalid_player = Player("")
 
     except ValueError as ve:
         print(f"Configuration error: {ve}")

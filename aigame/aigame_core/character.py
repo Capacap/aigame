@@ -1,8 +1,8 @@
+from __future__ import annotations
 import litellm
 import json
-from player import Player # Assuming player.py is in the same directory
-from item import Item, load_item_from_file # Added load_item_from_file
-from location import Location # Import Location for type hinting
+from .item import Item, load_item_from_file
+from .location import Location
 
 # Rich imports
 from rich import print as rprint
@@ -11,7 +11,7 @@ from rich.text import Text
 from rich.console import Console
 
 # Import for loading items
-ITEMS_BASE_PATH = "aigame/data/items" # Define base path for item JSONs
+ITEMS_BASE_PATH = "aigame/data/items"
 
 console = Console()
 
@@ -119,7 +119,8 @@ class Character:
             messages.append({"role": role, "content": turn["message"]})
         return messages
 
-    def get_ai_response(self, player_object: Player, current_location: Location) -> str | None:
+    def get_ai_response(self, player_object: 'Player', current_location: Location) -> str | None:
+        from .player import Player # Corrected import: Import Player here, inside the method
         current_messages = self._prepare_llm_messages(current_location)
         give_item_tool = {
             "type": "function",
@@ -327,5 +328,3 @@ def load_character_from_file(character_name: str, base_directory_path: str) -> C
         char_name = char_data.get('name', 'Unknown Character')
         rprint(f"[bold red]Error loading character '{char_name}': {ve}[/bold red]")
         raise ValueError(f"Failed to load character '{char_name}': {ve}") from ve
-
-
