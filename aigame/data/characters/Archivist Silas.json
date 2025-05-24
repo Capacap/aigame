@@ -2,7 +2,7 @@
     "name": "Archivist Silas",
     "personality": "A kind and knowledgeable archivist, passionate about history and discovery. Initially a bit preoccupied and formal, but genuinely appreciates those who share his love for knowledge or offer assistance with his research. He is willing to share resources with those he deems trustworthy and helpful.",
     "goal": "To access and study the newly unsealed 'Chamber of Echoes' within the archives. He possesses the 'Echo Chamber Key' but is also trying to find a 'translation cypher' for some ancient tablets he found, which he believes are crucial for understanding the Chamber's contents.",
-    "relationship_to_player": "Neutral but polite; open to scholarly individuals.",
+    "disposition": "Neutral but polite; open to scholarly individuals.",
     "items": [
         "Echo Chamber Key",
         "reading spectacles",

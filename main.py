@@ -17,20 +17,21 @@ CHARACTERS_BASE_PATH = "aigame/data/characters"
 ITEMS_BASE_PATH = "aigame/data/items"
 LOCATIONS_BASE_PATH = "aigame/data/locations"
 NPC_NAME_TO_LOAD = "Archivist Silas"
-PLAYER_STARTING_ITEM_NAME = "translation cypher"
+PLAYER_CHARACTER_NAME = "Alex the Scholar"
 STARTING_LOCATION_NAME = "Archive Study"
 
 def initialize_game_entities():
     """Initializes the player, NPC, and starting location for the game."""
-    player1 = Player(name="Alex the Scholar")
     
-    # Load player's starting item
+    # Load player character data and create Player object
     try:
-        starting_item = load_item_from_file(PLAYER_STARTING_ITEM_NAME, ITEMS_BASE_PATH)
-        player1.add_item(starting_item)
+        player_character_data = load_character_from_file(PLAYER_CHARACTER_NAME, CHARACTERS_BASE_PATH)
+        player1 = Player(character_data=player_character_data)
+        # Player's starting items are now handled by their character JSON definition.
+        # The Player constructor copies these items.
     except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
-        rprint(f"[bold red]Critical Error: Failed to load player starting item '{PLAYER_STARTING_ITEM_NAME}' from '{ITEMS_BASE_PATH}'. Details: {e}[/bold red]")
-        raise SystemExit(f"Error loading starting item '{PLAYER_STARTING_ITEM_NAME}': {e}")
+        rprint(f"[bold red]Critical Error: Failed to load player character '{PLAYER_CHARACTER_NAME}' from '{CHARACTERS_BASE_PATH}'. Details: {e}[/bold red]")
+        raise SystemExit(f"Error loading player character '{PLAYER_CHARACTER_NAME}': {e}")
 
     # Load NPC
     try:
@@ -54,6 +55,7 @@ def display_initial_state(player, npc, location):
     rprint(Panel(Text(f"{location.name}\n\n{location.description}"), title="Current Location", border_style="yellow", expand=False))
     console.line()
 
+    # Display Player State (using player1.name which comes from the Character object)
     player_state_text = Text()
     player_state_text.append(f"Name: {player.name}\\n", style="bold")
     player_state_text.append(f"Items: {', '.join(item.name for item in player.items) if player.items else 'Nothing'}")
@@ -72,7 +74,7 @@ def run_interaction_loop(player1, npc, key_to_obtain, current_location):
         console.rule(f"Interaction {interaction_count}", style="bold magenta")
         console.line(1)
         
-        old_disposition_for_turn = npc.relationship_to_player
+        old_disposition_for_turn = npc.disposition
         old_npc_items_for_turn = [item.name for item in npc.items]
         old_player_items_for_turn = [item.name for item in player1.items]
 
@@ -101,7 +103,7 @@ def run_interaction_loop(player1, npc, key_to_obtain, current_location):
             
         if not npc.has_item(key_to_obtain) and player1.has_item(key_to_obtain):
             success_text = Text(f"SUCCESS! {player1.name} obtained the '{key_to_obtain}' from {npc.name}!", style="bold bright_green")
-            disposition_text = Text(f"{npc.name}'s final disposition: {npc.relationship_to_player}", style="green")
+            disposition_text = Text(f"{npc.name}'s final disposition: {npc.disposition}", style="green")
             rprint(Panel(Text.assemble(success_text, "\n", disposition_text), title="Outcome", border_style="bright_green"))
             break
 
@@ -119,9 +121,9 @@ def display_interaction_state(player1, npc, old_player_items, old_npc_items, old
     if old_npc_items != [item.name for item in npc.items]:
             state_panel_content.append(f"SYSTEM: NPC inventory changed. Old: {old_npc_items}, New: {[item.name for item in npc.items]}\\n", style="dim bright_green")
     
-    state_panel_content.append(f"Character ({npc.name}) Disposition: {npc.relationship_to_player}", style="green")
-    if old_disposition != npc.relationship_to_player:
-        state_panel_content.append(f"\\nSYSTEM: NPC disposition changed from '{old_disposition}' to '{npc.relationship_to_player}'.", style="bright_cyan")
+    state_panel_content.append(f"Character ({npc.name}) Disposition: {npc.disposition}", style="green")
+    if old_disposition != npc.disposition:
+        state_panel_content.append(f"\\nSYSTEM: NPC disposition changed from '{old_disposition}' to '{npc.disposition}'.", style="bright_cyan")
     
     rprint(Panel(state_panel_content, title="State After Interaction", expand=False, border_style="yellow"))
     console.line()

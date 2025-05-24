@@ -16,7 +16,7 @@ ITEMS_BASE_PATH = "aigame/data/items" # Define base path for item JSONs
 console = Console()
 
 class Character:
-    def __init__(self, name: str, personality: str, goal: str, relationship_to_player: str, items: list[Item]):
+    def __init__(self, name: str, personality: str, goal: str, disposition: str, items: list[Item]):
         # Validate arguments
         if not isinstance(name, str) or not name:
             raise ValueError("Name must be a non-empty string.")
@@ -24,8 +24,8 @@ class Character:
             raise ValueError("Personality must be a non-empty string.")
         if not isinstance(goal, str) or not goal:
             raise ValueError("Goal must be a non-empty string.")
-        if not isinstance(relationship_to_player, str) or not relationship_to_player:
-            raise ValueError("Relationship to player must be a non-empty string.")
+        if not isinstance(disposition, str) or not disposition:
+            raise ValueError("Disposition must be a non-empty string.")
         if not isinstance(items, list) or not all(isinstance(item, Item) for item in items):
             raise ValueError("Items must be a list of Item objects.")
 
@@ -33,7 +33,7 @@ class Character:
         self.name: str = name
         self.personality: str = personality
         self.goal: str = goal
-        self.relationship_to_player: str = relationship_to_player
+        self.disposition: str = disposition
         self.items: list[Item] = list(items) # Now a list of Item objects
         self.conversation_history: list[dict[str, str]] = []
 
@@ -43,7 +43,7 @@ class Character:
             f"Name: {self.name}\n"
             f"Personality: {self.personality}\n"
             f"Goal: {self.goal}\n"
-            f"Relationship to Player: {self.relationship_to_player}\n"
+            f"Disposition: {self.disposition}\n"
             # Use item.name for display
             f"Items: {', '.join(item.name for item in self.items) if self.items else 'None'}"
         )
@@ -101,7 +101,7 @@ class Character:
             f"You are {self.name}.\n"
             f"Your personality: {self.personality}\n"
             f"Your current goal: {self.goal}\n"
-            f"Your current feelings towards the player: {self.relationship_to_player}\n"
+            f"Your current disposition/state of mind: {self.disposition}\n"
             f"You are currently carrying: {items_str}.\n"
             f"{location_info}\n\n"
             f"You will act and speak as {self.name} based on this information. Do not break character. "
@@ -109,8 +109,8 @@ class Character:
             f"Only provide {self.name}'s next line of dialogue in response to the user. "
             f"The user may perform actions like giving you items. These will be described in their message (e.g., 'I hand the item_name over to you.'). React naturally to such actions."
             f"You have tools available to interact with the game world. These include: "
-            f"1. 'give_item_to_player': Use this tool if you willingly decide to give an item you possess to the player. You MUST use this tool to transfer an item; do NOT just describe giving an item in your dialogue (e.g., do not say '*hands over the item*'). Clearly state your intention or the context that leads you to use a tool before your textual response that accompanies the tool use. For example, if giving an item, say something like 'Since you helped me, I can give you this.' then use the tool." 
-            f"2. 'change_disposition': Use this to update your internal feelings/relationship towards the player if the conversation significantly warrants it (e.g., they help you, betray you, impress you with knowledge, show great kindness). "
+            f"1. 'give_item_to_user': Use this tool if you willingly decide to give an item you possess to the user. You MUST use this tool to transfer an item; do NOT just describe giving an item in your dialogue (e.g., do not say '*hands over the item*'). Clearly state your intention or the context that leads you to use a tool before your textual response that accompanies the tool use. For example, if giving an item, say something like 'Since you helped me, I can give you this.' then use the tool." 
+            f"2. 'change_disposition': Use this to update your internal disposition/state of mind. "
             f"Clearly state your intention or the context that leads you to use a tool before using it. For example, if giving an item, say something like 'Since you helped me, I can give you this.'"
         )
         messages = [{"role": "system", "content": system_message_content}]
@@ -124,8 +124,8 @@ class Character:
         give_item_tool = {
             "type": "function",
             "function": {
-                "name": "give_item_to_player",
-                "description": "Gives an item from the character's inventory to the player. Only use this if the character willingly and logically decides to give the item based on the conversation (e.g., as a reward, for significant help, a fair trade). The item must be one the character currently possesses.",
+                "name": "give_item_to_user",
+                "description": "Gives an item from the character's inventory to the user. Only use this if the character willingly and logically decides to give the item based on the conversation (e.g., as a reward, for significant help, a fair trade). The item must be one the character currently possesses.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -146,20 +146,20 @@ class Character:
             "type": "function",
             "function": {
                 "name": "change_disposition",
-                "description": "Updates the character's internal disposition or relationship towards the player based on the interaction. Use after significant positive or negative events, or if the player's actions align or conflict with your goals/personality.",
+                "description": "Updates the character's internal disposition or state of mind based on the interaction. Use after significant positive or negative events, or if the user's actions align or conflict with your goals/personality.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "new_disposition": {
+                        "new_disposition_state": {
                             "type": "string",
-                            "description": "The new way the character feels about or relates to the player (e.g., 'more trusting and friendly', 'highly suspicious and wary', 'grateful and indebted', 'impressed and respectful')."
+                            "description": "The new disposition or state of mind (e.g., 'more trusting and friendly', 'highly suspicious and wary', 'grateful and indebted', 'annoyed', 'pleased')."
                         },
                         "reason": {
                             "type": "string",
                             "description": "A brief explanation for why the character's disposition is changing, reflecting the conversation."
                         }
                     },
-                    "required": ["new_disposition", "reason"]
+                    "required": ["new_disposition_state", "reason"]
                 }
             }
         }
@@ -204,7 +204,7 @@ class Character:
                     tool_result_content = ""
                     try:
                         args = json.loads(function_args_str)
-                        if function_name == "give_item_to_player":
+                        if function_name == "give_item_to_user":
                             item_name_to_give = args.get("item_name")
                             reason_for_giving = args.get("reason", "No specific reason stated by AI.")
                             rprint(Text(f"SYSTEM: AI ({self.name}) attempting to give '{item_name_to_give}'. Reason: {reason_for_giving}", style="yellow"))
@@ -221,15 +221,15 @@ class Character:
                             else:
                                 tool_result_content = f"{self.name} tried to give '{item_name_to_give}' (Reason: {reason_for_giving}) but does not possess it. Current items: {', '.join(item.name for item in self.items)}"
                         elif function_name == "change_disposition":
-                            new_disposition = args.get("new_disposition")
+                            new_disposition_value = args.get("new_disposition_state")
                             reason_for_change = args.get("reason", "No specific reason stated by AI.")
-                            rprint(Text(f"SYSTEM: AI ({self.name}) attempting to change disposition to '{new_disposition}'. Reason: {reason_for_change}", style="yellow"))
-                            if not new_disposition or not isinstance(new_disposition, str):
-                                tool_result_content = "Error: new_disposition not provided or invalid."
+                            rprint(Text(f"SYSTEM: AI ({self.name}) attempting to change disposition to '{new_disposition_value}'. Reason: {reason_for_change}", style="yellow"))
+                            if not new_disposition_value or not isinstance(new_disposition_value, str):
+                                tool_result_content = "Error: new_disposition_state not provided or invalid."
                             else:
-                                self.relationship_to_player = new_disposition
-                                tool_result_content = f"{self.name}'s disposition towards player changed to: '{new_disposition}'."
-                                rprint(Text(f"SYSTEM: {self.name}'s disposition towards player is now '{self.relationship_to_player}'.", style="bright_cyan"))
+                                self.disposition = new_disposition_value
+                                tool_result_content = f"{self.name}'s disposition changed to: '{self.disposition}'."
+                                rprint(Text(f"SYSTEM: {self.name}'s disposition is now '{self.disposition}'.", style="bright_cyan"))
                         else:
                             tool_result_content = f"Error: Unknown tool {function_name} called by {self.name}."
                     except json.JSONDecodeError:
@@ -258,11 +258,11 @@ class Character:
         name = data.get("name")
         personality = data.get("personality")
         goal = data.get("goal")
-        relationship_to_player = data.get("relationship_to_player")
+        disposition = data.get("disposition")
         item_names_data = data.get("items", []) # Expecting a list of item names (strings)
 
-        if not all([name, personality, goal, relationship_to_player]):
-            raise ValueError("Missing required character attributes in data: name, personality, goal, relationship_to_player.")
+        if not all([name, personality, goal, disposition]):
+            raise ValueError("Missing required character attributes in data: name, personality, goal, disposition.")
         if not isinstance(item_names_data, list):
             raise ValueError("Items data must be a list of item names (strings).")
 
@@ -282,7 +282,7 @@ class Character:
             name=name,
             personality=personality,
             goal=goal,
-            relationship_to_player=relationship_to_player,
+            disposition=disposition,
             items=parsed_items
         )
 

@@ -1,18 +1,21 @@
 from item import Item # Import the Item class
+from character import Character # Import Character class
 
 class Player:
     """
     Represents the player in the game.
     """
 
-    def __init__(self, name: str):
+    def __init__(self, character_data: Character):
         # Validate arguments
-        if not isinstance(name, str) or not name:
-            raise ValueError("Player name must be a non-empty string.")
+        if not isinstance(character_data, Character):
+            raise ValueError("Player must be initialized with a Character object.")
 
-        # Assign attributes
-        self.name: str = name
-        self.items: list[Item] = [] # Changed to list[Item]
+        # Assign attributes from Character object
+        self.name: str = character_data.name
+        # Initialize player's items as a copy of the character's items
+        # This ensures the Player has its own list to modify independently
+        self.items: list[Item] = list(character_data.items) 
 
     def __str__(self) -> str:
         """
@@ -73,7 +76,7 @@ class Player:
 if __name__ == '__main__':
     try:
         # Player creation
-        player1 = Player(name="Hero")
+        player1 = Player(character_data=Character(name="Hero", items=[]))
         print(player1)
 
         # Add items - now creating Item objects
