@@ -4,9 +4,5 @@
   "location_name": "Bazaar Stall",
   "player_character_name": "Alex the Scholar",
   "npc_character_name": "Shady Sal",
-  "victory_condition": {
-    "type": "PLAYER_OBTAINS_ITEM",
-    "item_name": "Ancient Amulet",
-    "from_npc": true
-  }
+  "victory_condition": "The player (Alex the Scholar) must possess the Ancient Amulet, and the NPC (Shady Sal) must no longer have it."
 } 

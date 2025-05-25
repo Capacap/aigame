@@ -395,13 +395,50 @@ def display_interaction_state(player1: Player, npc: Character, old_player_items:
     console.line()
 
 
-def run_interaction_loop(player1: Player, npc: Character, current_location: Location, victory_condition: dict, game_master: GameMaster, scenario: Scenario):
+def run_interaction_loop(player1: Player, npc: Character, current_location: Location, victory_condition: str, game_master: GameMaster, scenario: Scenario):
     """Handles the main interaction loop between the player and NPC."""
     interaction_count = 0
     game_ended_by_victory = False # Flag to track if victory occurred
     
     # Display available commands at the start
     display_available_commands()
+    
+    # Handle NPC speaking first if specified in scenario
+    if scenario.npc_speaks_first:
+        console.line()
+        rprint("[dim]The conversation begins...[/dim]")
+        console.line()
+        
+        # Store initial state for comparison
+        old_disposition_initial = npc.disposition
+        old_npc_items_initial = [item.name for item in npc.items]
+        old_player_items_initial = [item.name for item in player1.items]
+        
+        # NPC speaks first
+        npc_opening_response = handle_npc_response(npc, player1, current_location)
+        
+        # Display any state changes from NPC's opening
+        display_interaction_state(player1, npc, old_player_items_initial, old_npc_items_initial, old_disposition_initial)
+        
+        # Check victory condition after NPC's opening (unlikely but possible)
+        victory_met, gm_reasoning = game_master.evaluate_victory_condition(player1, npc, victory_condition)
+        if victory_met:
+            console.line()
+            rprint(f"🎯 [dim cyan]Game Master: {gm_reasoning}[/dim cyan]")
+            rprint(f"🎉 [bold bright_green]SUCCESS! Victory condition achieved![/bold bright_green]")
+            rprint(f"💭 [green]{npc.name}'s final disposition: {npc.disposition}[/green]")
+            
+            # Provide epilogue for victory
+            epilogue = game_master.provide_epilogue(scenario, player1, npc, "VICTORY")
+            console.line()
+            rprint(Panel(Text(epilogue, justify="left"), title="Victory Achieved!", border_style="bold bright_green", expand=False))
+            if npc: npc.add_dialogue_turn(speaker="Game Master", message=epilogue)
+            console.line()
+            game_ended_by_victory = True
+            return
+        else:
+            # Subtly show progress feedback after NPC opening
+            rprint(f"🎯 [dim]Game Master: {gm_reasoning}[/dim]")
     
     while True:
         interaction_count += 1
@@ -465,8 +502,10 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
         display_interaction_state(player1, npc, old_player_items_for_turn, old_npc_items_for_turn, old_disposition_for_turn)
             
         # Check victory condition
-        if game_master.evaluate_victory_condition(player1, npc, victory_condition):
+        victory_met, gm_reasoning = game_master.evaluate_victory_condition(player1, npc, victory_condition)
+        if victory_met:
             console.line()
+            rprint(f"🎯 [dim cyan]Game Master: {gm_reasoning}[/dim cyan]")
             rprint(f"🎉 [bold bright_green]SUCCESS! Victory condition achieved![/bold bright_green]")
             rprint(f"💭 [green]{npc.name}'s final disposition: {npc.disposition}[/green]")
             
@@ -478,6 +517,9 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
             console.line()
             game_ended_by_victory = True # Set flag
             break # Exit loop on victory
+        else:
+            # Subtly show progress feedback
+            rprint(f"🎯 [dim]Game Master: {gm_reasoning}[/dim]")
 
 def display_final_summary(player1: Player, npc: Character):
     """Displays the final states of the player and NPC, and the conversation history."""

@@ -1,0 +1,11 @@
+{
+    "name": "Traveler",
+    "personality": "A seasoned wanderer with a curious mind and open heart. You've seen many places and met many people, making you adaptable and good at reading situations. Your travels have taught you the value of listening before speaking, and you're naturally inclined to help others when their cause seems just. You carry yourself with quiet confidence but remain humble about your experiences.",
+    "goal": "Navigate this encounter with wisdom and discernment, helping where appropriate while staying true to your principles.",
+    "disposition": "curious",
+    "items": [
+        "Travel Pack",
+        "Silver Coins",
+        "Worn Journal"
+    ]
+} 

@@ -44,12 +44,7 @@ class GameMaster:
 
         if game_outcome == "VICTORY":
             epilogue_text += f"Through skill and determination, {player.name} successfully achieved the objective! "
-            # Could add more details based on victory condition, player/npc items, npc disposition etc.
             epilogue_text += f"{npc.name} is now {npc.disposition}. " 
-            # Check if the victory involved obtaining an item
-            vc = scenario.victory_condition
-            if vc.get("type") == "PLAYER_OBTAINS_ITEM" and vc.get("item_name"):
-                epilogue_text += f"{player.name} is now in possession of the coveted {vc.get("item_name")}."
             epilogue_text += "\nA chapter closes, but the story continues..."
         elif game_outcome == "PLAYER_QUIT":
             epilogue_text += f"{player.name} decided to walk away from this particular path. "
@@ -60,71 +55,70 @@ class GameMaster:
         
         return epilogue_text
 
-    def _format_state_for_llm(self, player: Player, npc: Character, victory_condition: dict) -> str:
+    def _format_state_for_llm(self, player: Player, npc: Character, victory_condition: str) -> str:
         player_items_str = ", ".join(item.name for item in player.items) if player.items else "None"
         npc_items_str = ", ".join(item.name for item in npc.items) if npc.items else "None"
         
-        # Describe the victory condition clearly
-        vc_type = victory_condition.get("type")
-        vc_item_name = victory_condition.get("item_name")
-        vc_from_npc = victory_condition.get("from_npc", False)
-
-        vc_description = "Unknown victory condition."
-        if vc_type == "PLAYER_OBTAINS_ITEM":
-            vc_description = f"The player ('{player.name}') must possess the item '{vc_item_name}'."
-            if vc_from_npc:
-                vc_description += f" Additionally, the NPC ('{npc.name}') must no longer possess this item."
-        # Future victory condition descriptions can be added here
-
         state_description = (
             f"Current Game State:\n"
             f"- Player: {player.name}\n  - Items: [{player_items_str}]\n"
             f"- NPC: {npc.name}\n  - Items: [{npc_items_str}]\n  - Disposition: {npc.disposition}\n"
-            f"\nVictory Condition to Evaluate:\n{vc_description}"
+            f"\nVictory Condition to Evaluate:\n{victory_condition}"
         )
         return state_description
 
-    def evaluate_victory_condition(self, player: Player, npc: Character, victory_condition: dict) -> bool:
+    def evaluate_victory_condition(self, player: Player, npc: Character, victory_condition: str) -> tuple[bool, str]:
         """
         Uses an LLM to evaluate if the victory condition has been met.
+        Returns a tuple of (is_met: bool, reasoning: str)
         """
         state_prompt = self._format_state_for_llm(player, npc, victory_condition)
 
         system_message = (
-            "You are a meticulous Game Master AI. Your sole task is to evaluate if a specific, predefined "
-            "victory condition has been met based on the current game state provided. "
-            "Do not offer opinions, suggestions, or any narrative. "
-            "Consider only the facts presented against the victory condition. "
-            "Respond with only the word 'true' if the condition is met, or 'false' if it is not."
+            "You are a meticulous Game Master AI. Your task is to evaluate if a specific victory condition "
+            "has been met based on the current game state provided. "
+            "You must provide both a clear determination (true/false) and a brief explanation of your reasoning. "
+            "Be precise and factual in your analysis. "
+            "Respond with a JSON object containing two keys: "
+            "'result' (boolean: true if condition is met, false if not) and "
+            "'reasoning' (string: 1-2 sentence explanation of why the condition is or isn't met)."
         )
         
         messages = [
             {"role": "system", "content": system_message},
-            {"role": "user", "content": state_prompt + "\n\nHas this victory condition been met based *strictly* on the rules and state provided? (Respond with only 'true' or 'false')"}
+            {"role": "user", "content": state_prompt + "\n\nEvaluate this victory condition based strictly on the current game state. Provide your response as a JSON object."}
         ]
 
         try:
-            # rprint(f"[grey50]GM Prompt to LLM:\nSystem: {system_message}\nUser: {messages[1]['content']}[/grey50]") # For debugging
             response = litellm.completion(
-                model="openai/gpt-4.1-mini", # Or another suitable model
+                model="openai/gpt-4.1-mini",
                 messages=messages,
-                max_tokens=5, # Should only need 'true' or 'false'
-                temperature=0.0 # We want deterministic evaluation
+                max_tokens=100, # Allow more tokens for reasoning
+                temperature=0.0, # We want deterministic evaluation
+                response_format={"type": "json_object"}
             )
-            raw_response_content = response.choices[0].message.content.strip().lower()
-            rprint(Text(f"GM AI raw evaluation: '{raw_response_content}'", style="dim yellow"))
+            raw_response_content = response.choices[0].message.content
+            
+            if not raw_response_content:
+                return False, "Game Master evaluation failed - empty response."
 
-            if raw_response_content == "true":
-                return True
-            elif raw_response_content == "false":
-                return False
-            else:
-                rprint(Text(f"[bold red]GM AI returned an unexpected response: '{raw_response_content}'. Defaulting to false.[/bold red]"))
-                return False
+            try:
+                parsed_json = json.loads(raw_response_content)
+                result = parsed_json.get("result", False)
+                reasoning = parsed_json.get("reasoning", "No reasoning provided.")
+                
+                if not isinstance(result, bool):
+                    return False, "Game Master evaluation failed - invalid result format."
+                
+                return result, reasoning
+                
+            except json.JSONDecodeError as e:
+                rprint(Text(f"[bold red]Error parsing Game Master response: {e}[/bold red]"))
+                return False, f"Game Master evaluation failed - JSON parsing error: {str(e)}"
 
         except Exception as e:
-            rprint(Text(f"[bold red]Error during Game Master AI evaluation: {e}. Defaulting to false.[/bold red]"))
-            return False 
+            rprint(Text(f"[bold red]Error during Game Master AI evaluation: {e}[/bold red]"))
+            return False, f"Game Master evaluation failed - {str(e)}"
 
     def parse_trade_proposal(
         self,

@@ -4,9 +4,5 @@
     "location_name": "Restricted Library",
     "player_character_name": "Dr. Thornfield",
     "npc_character_name": "Keeper Dusttome",
-    "victory_condition": {
-        "type": "PLAYER_OBTAINS_ITEM",
-        "item_name": "Forbidden Grimoire",
-        "from_npc": true
-    }
+    "victory_condition": "The player (Dr. Thornfield) must possess the Forbidden Grimoire AND the NPC (Keeper Dusttome) must have a positive disposition (not stern, cold, or hostile). The librarian must be convinced through charm or understanding, not just trade."
 } 

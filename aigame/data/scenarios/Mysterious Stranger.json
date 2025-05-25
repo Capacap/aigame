@@ -1,0 +1,9 @@
+{
+    "name": "Mysterious Stranger",
+    "description": "A hooded figure approaches you in the tavern, their eyes gleaming with an urgent need. They seem to have something important to say, but their intentions remain unclear. Will you listen to their proposal and help them with their mysterious quest?",
+    "location_name": "Tavern",
+    "player_character_name": "Traveler",
+    "npc_character_name": "Hooded Figure",
+    "npc_speaks_first": true,
+    "victory_condition": "The player (Traveler) must possess the Ancient Map AND either the Strange Amulet or the Cryptic Letter. The NPC (Hooded Figure) must have given away at least one of their original items."
+} 

@@ -5,7 +5,8 @@ from rich import print as rprint
 class Scenario:
     def __init__(self, name: str, description: str, 
                  location_name: str, player_character_name: str, 
-                 npc_character_name: str, victory_condition: dict):
+                 npc_character_name: str, victory_condition: str, 
+                 npc_speaks_first: bool = False):
         
         if not isinstance(name, str) or not name:
             raise ValueError("Scenario name must be a non-empty string.")
@@ -17,15 +18,18 @@ class Scenario:
             raise ValueError("Player character name must be a non-empty string.")
         if not isinstance(npc_character_name, str) or not npc_character_name:
             raise ValueError("NPC character name must be a non-empty string.")
-        if not isinstance(victory_condition, dict) or not victory_condition:
-            raise ValueError("Victory condition must be a non-empty dictionary.")
+        if not isinstance(victory_condition, str) or not victory_condition:
+            raise ValueError("Victory condition must be a non-empty string.")
+        if not isinstance(npc_speaks_first, bool):
+            raise ValueError("NPC speaks first must be a boolean value.")
 
         self.name: str = name
         self.description: str = description
         self.location_name: str = location_name
         self.player_character_name: str = player_character_name
         self.npc_character_name: str = npc_character_name
-        self.victory_condition: dict = victory_condition
+        self.victory_condition: str = victory_condition
+        self.npc_speaks_first: bool = npc_speaks_first
 
     def __str__(self) -> str:
         return f"Scenario: {self.name}\nDescription: {self.description}"
@@ -33,7 +37,8 @@ class Scenario:
     def __repr__(self) -> str:
         return (f"Scenario(name='{self.name}', description='{self.description}', "
                 f"location_name='{self.location_name}', player_character_name='{self.player_character_name}', "
-                f"npc_character_name='{self.npc_character_name}', victory_condition={self.victory_condition})")
+                f"npc_character_name='{self.npc_character_name}', victory_condition='{self.victory_condition}', "
+                f"npc_speaks_first={self.npc_speaks_first})")
 
     @classmethod
     def from_dict(cls, data: dict) -> Scenario:
@@ -46,6 +51,7 @@ class Scenario:
         player_character_name = data.get("player_character_name")
         npc_character_name = data.get("npc_character_name")
         victory_condition = data.get("victory_condition")
+        npc_speaks_first = data.get("npc_speaks_first", False)
 
         if not all([name, description, location_name, player_character_name, npc_character_name, victory_condition]):
             raise ValueError("Scenario data must include 'name', 'description', 'location_name', 'player_character_name', 'npc_character_name', and 'victory_condition'.")
@@ -56,7 +62,8 @@ class Scenario:
             location_name=location_name,
             player_character_name=player_character_name,
             npc_character_name=npc_character_name,
-            victory_condition=victory_condition
+            victory_condition=victory_condition,
+            npc_speaks_first=npc_speaks_first
         )
 
 def load_scenario_from_file(scenario_name: str, base_directory_path: str) -> Scenario:
