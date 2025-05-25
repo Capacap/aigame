@@ -83,13 +83,6 @@ class InputParser:
             return self._extract_accept_parameters(player_input, npc, classification)
         elif action_type == 'decline_trade':
             return self._extract_decline_parameters(player_input, npc, classification)
-        elif action_type in ['quit', 'help']:
-            return {
-                'action_type': action_type,
-                'parameters': {},
-                'success': True,
-                'error_message': ''
-            }
         else:
             return {
                 'action_type': 'unknown',
@@ -175,22 +168,6 @@ class InputParser:
                 'error_message': ''
             }
         
-        elif command_verb == "quit":
-            return {
-                'action_type': 'quit',
-                'parameters': {},
-                'success': True,
-                'error_message': ''
-            }
-        
-        elif command_verb == "help":
-            return {
-                'action_type': 'help',
-                'parameters': {},
-                'success': True,
-                'error_message': ''
-            }
-        
         else:
             return {
                 'action_type': 'unknown',
@@ -224,17 +201,13 @@ class InputParser:
             "- 'trade_proposal': Player wants to propose trading items (offering one item for another)\n"
             "- 'accept_trade': Player wants to accept a trade or counter-proposal\n"
             "- 'decline_trade': Player wants to decline a trade or counter-proposal\n"
-            "- 'quit': Player wants to end the conversation/game\n"
-            "- 'help': Player wants to see available commands or get help\n"
             "- 'unknown': Input doesn't clearly match any category\n\n"
             "Consider context clues like:\n"
             "- Words like 'say', 'tell', 'ask', 'hello' suggest dialogue\n"
             "- Words like 'give', 'offer', 'take this', 'here' suggest give_item\n"
             "- Words like 'trade', 'exchange', 'swap', 'for your' suggest trade_proposal\n"
             "- Words like 'accept', 'yes', 'deal', 'agreed', 'okay', 'sure' suggest accept_trade\n"
-            "- Words like 'decline', 'no', 'refuse', 'reject' suggest decline_trade\n"
-            "- Words like 'quit', 'exit', 'leave', 'goodbye' suggest quit\n"
-            "- Words like 'help', 'commands', 'what can I do' suggest help\n\n"
+            "- Words like 'decline', 'no', 'refuse', 'reject' suggest decline_trade\n\n"
             "Be flexible - players might phrase things naturally. For example:\n"
             "- 'Here, take my sword' = give_item\n"
             "- 'I'll trade my coins for your key' = trade_proposal\n"

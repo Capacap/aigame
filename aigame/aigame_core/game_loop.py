@@ -245,13 +245,6 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str, curre
         rprint(f"❌ [dim]You decline the counter-proposal[/dim]")
         return "TRADE_DECLINED"
     
-    elif action_type == 'quit':
-        return "QUIT"
-    
-    elif action_type == 'help':
-        display_available_commands()
-        return "HELP_SHOWN"
-    
     else:
         rprint(Text(f"I don't understand what you want to do. Try being more specific.", style="bold yellow"))
         rprint(Text("You can talk to the character, offer items, propose trades, or type 'help' for guidance.", style="dim white"))
@@ -390,9 +383,9 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
         player_prompt_text.append(f"{player1.name}: ", style="bold blue")
         player_msg = console.input(player_prompt_text)
 
-        action_processed_successfully = handle_player_action(player1, npc, player_msg, current_location)
-
-        if action_processed_successfully == "QUIT":
+        # Check for quit command directly before AI parsing
+        player_msg_stripped = player_msg.strip().lower()
+        if player_msg_stripped == 'quit' or player_msg_stripped == '/quit':
             rprint(Text("Quitting conversation.", style="bold yellow"))
             # Provide epilogue for quitting
             epilogue = game_master.provide_epilogue(scenario, player1, npc, "PLAYER_QUIT")
@@ -400,9 +393,12 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
             console.line()
             break
 
-        if action_processed_successfully == "HELP_SHOWN":
-            # Help was displayed, continue to next interaction without NPC response
+        # Check for help command directly before AI parsing
+        if player_msg_stripped == 'help' or player_msg_stripped == '/help':
+            display_available_commands()
             continue
+
+        action_processed_successfully = handle_player_action(player1, npc, player_msg, current_location)
 
         if action_processed_successfully == "TRADE_ACCEPTED" or action_processed_successfully == "TRADE_DECLINED":
             # Trade response was already handled in the command, skip to GM assessment
@@ -498,8 +494,8 @@ def display_available_commands():
     rprint("  [bright_white]Propose trades:[/bright_white] 'I'll trade my coins for your key' or 'Want to swap items?'")
     rprint("  [bright_white]Accept trades:[/bright_white] 'That sounds good, I accept' or 'Deal!'")
     rprint("  [bright_white]Decline trades:[/bright_white] 'No thanks' or 'I decline your offer'")
-    rprint("  [bright_white]Get help:[/bright_white] 'help' or 'what can I do?'")
-    rprint("  [bright_white]Quit:[/bright_white] 'quit' or 'goodbye'")
+    rprint("  [bright_white]Get help:[/bright_white] '/help' or 'help'")
+    rprint("  [bright_white]Quit:[/bright_white] '/quit' or 'quit'")
     console.line()
     rprint("[dim]Just type naturally - the AI will understand what you want to do![/dim]")
     console.line()
