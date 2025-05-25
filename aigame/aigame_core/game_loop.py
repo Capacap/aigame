@@ -95,6 +95,10 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str, curre
     action_type = parsed_result['action_type']
     parameters = parsed_result['parameters']
     
+    # Display input classification with spacing
+    console.line()
+    rprint(Text(f"Input classified as: {action_type} (confidence: {parsed_result.get('confidence', 0.0):.2f})", style="dim magenta"))
+    
     # Handle each action type
     if action_type == 'dialogue':
         message = parameters['message']
@@ -285,72 +289,67 @@ def handle_npc_response(npc: Character, player_object: Player, current_location:
     # Use the new AI action parsing method
     ai_response, action_results = npc.get_ai_response_with_actions(player_object, current_location)
     
-    console.line(1)
-    
     if ai_response:
-        # Display the NPC's response
+        # NPC Response Section
+        console.line()
         npc_turn_text = Text()
         npc_turn_text.append(f"{npc.name}: ", style="bold green")
         npc_turn_text.append(ai_response)
         rprint(npc_turn_text)
         
-        # Show classification debug info after dialogue
+        # Action Results Section (if any actions occurred)
+        action_feedback = []
+        state_changes = action_results.get('state_changes', {})
+        
+        # Collect item transfer feedback
+        if 'item_transferred' in state_changes:
+            item_name = state_changes['item_transferred']
+            action_feedback.append(f"🎁 [dim]{npc.name} gives you the {item_name}[/dim]")
+        
+        # Collect offer feedback
+        if 'offer_accepted' in state_changes:
+            item_name = state_changes['offer_accepted']
+            action_feedback.append(f"✅ [dim]{npc.name} accepts your {item_name}[/dim]")
+        elif 'offer_declined' in state_changes:
+            action_feedback.append(f"❌ [dim]{npc.name} declines your offer[/dim]")
+        
+        # Collect trade feedback
+        if 'trade_completed' in state_changes:
+            player_received = state_changes.get('player_received', 'item')
+            npc_received = state_changes.get('npc_received', 'item')
+            action_feedback.append(f"✅ [bright_green]Trade completed: {npc_received} ↔ {player_received}[/bright_green]")
+        elif 'trade_declined' in state_changes:
+            action_feedback.append(f"❌ [dim]{npc.name} declines the trade[/dim]")
+        
+        # Collect counter-proposal feedback
+        if 'counter_proposal_made' in state_changes:
+            counter_player_item = state_changes.get('counter_player_item', 'item')
+            counter_npc_item = state_changes.get('counter_npc_item', 'item')
+            action_feedback.append(f"🔄 [bright_cyan]Counter-proposal: {npc.name} wants your {counter_player_item} for their {counter_npc_item}[/bright_cyan]")
+        
+        # Display action feedback with spacing if any exists
+        if action_feedback:
+            for feedback in action_feedback:
+                rprint(feedback)
+        
+        # Debug Information Section (separated and minimal)
         classification = action_results.get('classification', {})
         if classification:
             action_types = classification.get('action_types', ['unknown'])
             confidence = classification.get('confidence', 0.0)
-            if action_types[0] == 'dialogue_only':
-                rprint(Text(f"NPC response classified as: dialogue_only (confidence: {confidence:.2f})", style="dim magenta"))
-            else:
+            if action_types[0] != 'dialogue_only':  # Only show non-dialogue classifications
                 rprint(Text(f"NPC actions detected: {action_types} (confidence: {confidence:.2f})", style="dim magenta"))
         
-        # Display any action results
-        state_changes = action_results.get('state_changes', {})
-        
-        # Show item transfers
-        if 'item_transferred' in state_changes:
-            item_name = state_changes['item_transferred']
-            rprint(f"🎁 [dim]{npc.name} gives you the {item_name}[/dim]")
-        
-        # Show offer acceptance/decline
-        if 'offer_accepted' in state_changes:
-            item_name = state_changes['offer_accepted']
-            rprint(f"✅ [dim]{npc.name} accepts your {item_name}[/dim]")
-        elif 'offer_declined' in state_changes:
-            rprint(f"❌ [dim]{npc.name} declines your offer[/dim]")
-        
-        # Show request handling (now handled automatically before dialogue)
-        if 'request_handled' in state_changes:
-            # Request was already handled and feedback was provided
-            pass
-        
-        # Show trade handling (handled automatically before dialogue)
-        if 'trade_handled' in state_changes:
-            # Trade was already handled and feedback was provided
-            pass
-        
-        # Show trade completion
-        if 'trade_completed' in state_changes:
-            player_received = state_changes.get('player_received', 'item')
-            npc_received = state_changes.get('npc_received', 'item')
-            rprint(f"✅ [bright_green]Trade completed: {npc_received} ↔ {player_received}[/bright_green]")
-        elif 'trade_declined' in state_changes:
-            rprint(f"❌ [dim]{npc.name} declines the trade[/dim]")
-        
-        # Show counter-proposals
-        if 'counter_proposal_made' in state_changes:
-            counter_player_item = state_changes.get('counter_player_item', 'item')
-            counter_npc_item = state_changes.get('counter_npc_item', 'item')
-            rprint(f"🔄 [bright_cyan]Counter-proposal: {npc.name} wants your {counter_player_item} for their {counter_npc_item}[/bright_cyan]")
-        
-        # Show any errors
+        # Error Section (if any errors occurred)
         errors = action_results.get('errors', [])
-        for error in errors:
-            rprint(Text(f"Action error: {error}", style="dim red"))
+        if errors:
+            for error in errors:
+                rprint(Text(f"Action error: {error}", style="dim red"))
         
         return ai_response
     else:
-        # This case might mean an error in get_ai_response_with_actions or a deliberate empty response.
+        # Error case
+        console.line()
         rprint(Text(f"[{npc.name} is silent or an error occurred determining a response.]", style="italic red"))
         return None
 
@@ -362,6 +361,7 @@ def display_interaction_state(player1: Player, npc: Character, old_player_items:
     npc_items_changed = old_npc_items != [item.name for item in npc.items]
     disposition_changed = old_disposition != npc.disposition
     
+    # === ACTIVE PROPOSALS SECTION ===
     # Show active counter-proposal prominently if it exists
     if npc.active_trade_proposal:
         offered_by_name = npc.active_trade_proposal.get("offered_by_name", "")
@@ -371,29 +371,28 @@ def display_interaction_state(player1: Player, npc: Character, old_player_items:
             console.line()
             rprint(f"🔄 [bold bright_cyan]COUNTER-PROPOSAL: {npc.name} wants your {player_item_name} for their {npc_item_name}[/bold bright_cyan]")
             rprint(f"   [dim cyan]You can accept or decline this offer[/dim cyan]")
+            console.line()
     
-    # Only show changes if something actually changed
-    changes_to_show = []
-    
+    # === INVENTORY CHANGES SECTION ===
+    # Collect inventory changes
+    inventory_changes = []
     if player_items_changed:
         current_items = ', '.join(item.name for item in player1.items) if player1.items else 'None'
-        changes_to_show.append(f"👤 [blue]{player1.name}[/blue]: {current_items}")
+        inventory_changes.append(f"👤 [blue]{player1.name}[/blue]: {current_items}")
     
     if npc_items_changed:
         current_items = ', '.join(item.name for item in npc.items) if npc.items else 'None'
-        changes_to_show.append(f"🤝 [green]{npc.name}[/green]: {current_items}")
+        inventory_changes.append(f"🤝 [green]{npc.name}[/green]: {current_items}")
     
-    if disposition_changed:
-        changes_to_show.append(f"💭 [cyan]{npc.name} feels: {npc.disposition}[/cyan]")
-    
-    # Only display if there are changes to show
-    if changes_to_show:
+    # Display inventory changes with proper spacing
+    if inventory_changes:
         console.line()
-        for change in changes_to_show:
+        for change in inventory_changes:
             rprint(change)
+        console.line()
     
-    console.line()
-
+    # Note: Removed the redundant "character feels" message since disposition changes 
+    # are already shown by the Game Master analysis
 
 def run_interaction_loop(player1: Player, npc: Character, current_location: Location, victory_condition: str, game_master: GameMaster, scenario: Scenario):
     """Handles the main interaction loop between the player and NPC."""
@@ -416,6 +415,11 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
         
         # NPC speaks first
         npc_opening_response = handle_npc_response(npc, player1, current_location)
+        
+        # Analyze NPC's opening and update disposition if needed
+        if npc_opening_response:
+            opening_events = f"Game started; {npc.name} spoke first: {npc_opening_response}"
+            game_master.analyze_and_update_disposition(npc, player1, opening_events)
         
         # Display any state changes from NPC's opening
         display_interaction_state(player1, npc, old_player_items_initial, old_npc_items_initial, old_disposition_initial)
@@ -448,7 +452,8 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
         old_npc_items_for_turn = [item.name for item in npc.items] # Store names for simple comparison
         old_player_items_for_turn = [item.name for item in player1.items]
 
-        # Player's turn - simplified display
+        # === PLAYER TURN SECTION ===
+        console.line()
         current_items = ', '.join(item.name for item in player1.items) if player1.items else 'None'
         rprint(f"💼 [dim]Your items: {current_items}[/dim]")
         
@@ -483,8 +488,7 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
             console.line() # Add a little space before re-prompting
             continue
         
-        # Get NPC's response *before* GM disposition assessment for this turn's full context
-        # The npc_response variable will store the textual response of the NPC for the GM
+        # === NPC RESPONSE SECTION ===
         npc_actual_response_text = None 
 
         # NPC's turn (if applicable)
@@ -498,9 +502,50 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
             # this block would be hit. For now, it is defensive.
             pass # No NPC response needed if action_processed_successfully was false and we didn't continue.
 
+        # === GAME MASTER ANALYSIS SECTION ===
+        # Analyze recent events and update NPC disposition
+        if action_processed_successfully:
+            # Build a summary of recent events for disposition analysis
+            recent_events = []
+            
+            # Add player action description
+            if player_msg.strip():
+                recent_events.append(f"Player said/did: {player_msg}")
+            
+            # Add item changes if any occurred
+            current_player_items = [item.name for item in player1.items]
+            current_npc_items = [item.name for item in npc.items]
+            
+            if current_player_items != old_player_items_for_turn:
+                items_gained = [item for item in current_player_items if item not in old_player_items_for_turn]
+                items_lost = [item for item in old_player_items_for_turn if item not in current_player_items]
+                if items_gained:
+                    recent_events.append(f"Player gained items: {', '.join(items_gained)}")
+                if items_lost:
+                    recent_events.append(f"Player lost items: {', '.join(items_lost)}")
+            
+            if current_npc_items != old_npc_items_for_turn:
+                items_gained = [item for item in current_npc_items if item not in old_npc_items_for_turn]
+                items_lost = [item for item in old_npc_items_for_turn if item not in current_npc_items]
+                if items_gained:
+                    recent_events.append(f"{npc.name} gained items: {', '.join(items_gained)}")
+                if items_lost:
+                    recent_events.append(f"{npc.name} lost items: {', '.join(items_lost)}")
+            
+            # Add NPC response if there was one
+            if npc_actual_response_text:
+                recent_events.append(f"{npc.name} responded: {npc_actual_response_text}")
+            
+            # Only analyze if there were meaningful events
+            if recent_events:
+                events_summary = "; ".join(recent_events)
+                game_master.analyze_and_update_disposition(npc, player1, events_summary)
+
+        # === STATE CHANGES SECTION ===
         # Display state changes after both player and NPC (if any) have acted, and GM assessment
         display_interaction_state(player1, npc, old_player_items_for_turn, old_npc_items_for_turn, old_disposition_for_turn)
             
+        # === VICTORY CONDITION CHECK SECTION ===
         # Check victory condition
         victory_met, gm_reasoning = game_master.evaluate_victory_condition(player1, npc, victory_condition)
         if victory_met:
@@ -518,8 +563,9 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
             game_ended_by_victory = True # Set flag
             break # Exit loop on victory
         else:
-            # Subtly show progress feedback
+            # Subtly show progress feedback with spacing
             rprint(f"🎯 [dim]Game Master: {gm_reasoning}[/dim]")
+            console.line()  # Add extra space before next turn
 
 def display_final_summary(player1: Player, npc: Character):
     """Displays the final states of the player and NPC, and the conversation history."""
@@ -551,9 +597,9 @@ def display_final_summary(player1: Player, npc: Character):
             elif entry["role"] == "assistant":
                 content = entry.get("content", "")
                 if content:  # Only include assistant messages that have actual content (spoken responses)
-                    # Exclude tool call requests or purely functional messages without text for the player.
-                    if not entry.get("tool_calls"): # If it has tool_calls, it's a request, not spoken dialogue yet.
-                        dialogue_turns.append({"speaker": npc.name, "message": content, "style": "green"})
+                    # Include all assistant messages with content, even if they have tool calls
+                    # The content represents the NPC's spoken dialogue
+                    dialogue_turns.append({"speaker": npc.name, "message": content, "style": "green"})
 
         if not dialogue_turns:
             rprint("[dim]No actual dialogue was exchanged[/dim]")

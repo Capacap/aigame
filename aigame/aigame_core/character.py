@@ -240,6 +240,10 @@ class Character:
                             trade_completion_message = f"SYSTEM_ALERT: Trade completed successfully. You just traded your '{npc_item_name}' for the player's '{player_item_name}'. The exchange is done. Respond naturally to this completed transaction."
                             self.interaction_history.add_entry(role="system", content=trade_completion_message)
                             
+                            # Add the spoken response to conversation history
+                            if spoken_response:
+                                self.add_dialogue_turn(speaker=self.name, message=spoken_response)
+                            
                             return spoken_response
                         else:
                             self.active_trade_proposal = None
@@ -271,6 +275,10 @@ class Character:
                                 trade_completion_message = f"SYSTEM_ALERT: Trade completed successfully. You just traded your '{npc_item_name}' for the player's '{player_item_name}'. The exchange is done. Respond naturally to this completed transaction."
                                 self.interaction_history.add_entry(role="system", content=trade_completion_message)
                                 
+                                # Add the spoken response to conversation history
+                                if spoken_response:
+                                    self.add_dialogue_turn(speaker=self.name, message=spoken_response)
+                                
                                 return spoken_response
                             else:
                                 self.active_trade_proposal = None
@@ -298,6 +306,11 @@ class Character:
                                 }
                                 rprint(Text.assemble(Text("COUNTER-PROPOSAL: ", style="dim cyan"), 
                                                    Text(f"{self.name} proposes '{counter_npc_item}' for '{counter_player_item}' instead.", style="cyan")))
+                                
+                                # Add the spoken response to conversation history
+                                if spoken_response:
+                                    self.add_dialogue_turn(speaker=self.name, message=spoken_response)
+                                
                                 return spoken_response
                             else:
                                 self.active_trade_proposal = None
@@ -308,10 +321,16 @@ class Character:
                     else:
                         # Invalid counter-proposal, treat as rejection
                         self.active_trade_proposal = None
+                        # Add the spoken response to conversation history
+                        if spoken_response:
+                            self.add_dialogue_turn(speaker=self.name, message=spoken_response)
                         return f"{spoken_response}"
                 
                 else:  # REJECT or any other value
                     self.active_trade_proposal = None
+                    # Add the spoken response to conversation history
+                    if spoken_response:
+                        self.add_dialogue_turn(speaker=self.name, message=spoken_response)
                     return spoken_response
                     
             except json.JSONDecodeError:
@@ -412,6 +431,10 @@ class Character:
                             request_completion_message = f"SYSTEM_ALERT: You just gave your '{requested_item_name}' to {requested_by_name} as they requested. The item transfer is complete. Respond naturally to this generous act."
                             self.interaction_history.add_entry(role="system", content=request_completion_message)
                             
+                            # Add the spoken response to conversation history
+                            if spoken_response:
+                                self.add_dialogue_turn(speaker=self.name, message=spoken_response)
+                            
                             return spoken_response
                         else:
                             self.active_request = None
@@ -422,6 +445,9 @@ class Character:
                 
                 else:  # DECLINE or any other value
                     self.active_request = None
+                    # Add the spoken response to conversation history
+                    if spoken_response:
+                        self.add_dialogue_turn(speaker=self.name, message=spoken_response)
                     return spoken_response
                     
             except json.JSONDecodeError:

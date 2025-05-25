@@ -81,11 +81,11 @@ class NPCActionParser:
         if self.debug_mode and valid_actions:
             action_types = [action.get('type', 'unknown') for action in valid_actions]
             confidence = extracted_actions.get('confidence', 0.0)
-            # Show all classifications, including dialogue_only
-            if action_types[0] == 'dialogue_only':
-                rprint(Text(f"NPC response classified as: dialogue_only (confidence: {confidence:.2f})", style="dim magenta"))
-            else:
-                rprint(Text(f"NPC actions detected: {action_types} (confidence: {confidence:.2f})", style="dim magenta"))
+            # Remove duplicate classification messages - they're handled in game_loop.py
+            # if action_types[0] == 'dialogue_only':
+            #     rprint(Text(f"NPC response classified as: dialogue_only (confidence: {confidence:.2f})", style="dim magenta"))
+            # else:
+            #     rprint(Text(f"NPC actions detected: {action_types} (confidence: {confidence:.2f})", style="dim magenta"))
         
         return {
             'actions': valid_actions,
@@ -185,10 +185,27 @@ class NPCActionParser:
             confidence = parsed.get('confidence', 0.0)
             reasoning = parsed.get('reasoning', '')
             
+            # Validate that actions is a list of dictionaries, not strings
+            validated_actions = []
+            for action in actions:
+                if isinstance(action, dict):
+                    validated_actions.append(action)
+                elif isinstance(action, str):
+                    # Convert string action to proper dictionary format
+                    validated_actions.append({'type': action, 'parameters': {}})
+                else:
+                    # Skip invalid action types
+                    continue
+            
+            actions = validated_actions
+            
             # Log extraction for debugging (only for non-dialogue actions)
-            if actions and actions[0].get('type') != 'dialogue_only':
-                action_types = [action.get('type', 'unknown') for action in actions]
-                rprint(Text(f"NPC actions extracted: {action_types} (confidence: {confidence:.2f})", style="dim magenta"))
+            if actions and len(actions) > 0:
+                first_action = actions[0]
+                if isinstance(first_action, dict) and first_action.get('type') != 'dialogue_only':
+                    action_types = [action.get('type', 'unknown') if isinstance(action, dict) else str(action) for action in actions]
+                    # Remove duplicate logging - it's handled in game_loop.py
+                    # rprint(Text(f"NPC actions extracted: {action_types} (confidence: {confidence:.2f})", style="dim magenta"))
             
             return {
                 'success': True,

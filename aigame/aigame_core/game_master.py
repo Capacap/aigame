@@ -11,6 +11,9 @@ from .config import DEFAULT_LLM_MODEL
 
 from rich import print as rprint
 from rich.text import Text
+from rich.console import Console
+
+console = Console()
 
 class GameMaster:
     def __init__(self):
@@ -29,6 +32,110 @@ class GameMaster:
             f"{scenario.description}"
         )
         return intro_text
+
+    def analyze_and_update_disposition(self, npc: Character, player: Player, recent_events: str) -> str:
+        """
+        Analyzes recent events and updates the NPC's disposition accordingly.
+        Returns the new disposition as a natural language prompt.
+        """
+        # Validate arguments
+        if not isinstance(npc, Character):
+            raise ValueError("Invalid NPC character object provided.")
+        if not isinstance(player, Player):
+            raise ValueError("Invalid player object provided.")
+        if not isinstance(recent_events, str) or not recent_events.strip():
+            raise ValueError("Recent events must be a non-empty string.")
+
+        try:
+            # Get current state for context
+            current_disposition = npc.disposition
+            npc_items = ", ".join(item.name for item in npc.items) if npc.items else "None"
+            player_items = ", ".join(item.name for item in player.items) if player.items else "None"
+            
+            # Get recent conversation history for additional context
+            recent_history = npc.interaction_history.get_llm_history()
+            conversation_context = ""
+            if recent_history:
+                # Get last few exchanges for context
+                last_exchanges = recent_history[-4:] if len(recent_history) > 4 else recent_history
+                for entry in last_exchanges:
+                    role_name = player.name if entry["role"] == "user" else npc.name
+                    conversation_context += f"{role_name}: {entry.get('content', '')}\n"
+
+            system_message = (
+                f"You are a Game Master AI analyzing how recent events should affect an NPC's disposition. "
+                f"Your task is to determine if the NPC's current disposition should change based on what just happened. "
+                f"Consider the NPC's personality, goals, and how they would realistically react to the recent events. "
+                f"The disposition should be a natural language description of the NPC's current emotional state, "
+                f"attitude, or mindset that will guide their future responses. "
+                f"Examples: 'suspicious and guarded', 'grateful and friendly', 'angry and hostile', "
+                f"'curious but cautious', 'impressed and respectful', 'disappointed but hopeful'. "
+                f"Only change the disposition if the events warrant a meaningful shift. "
+                f"Respond with a JSON object containing: "
+                f"'should_update' (boolean), 'new_disposition' (string), and 'reasoning' (string)."
+            )
+
+            user_prompt = (
+                f"NPC: {npc.name}\n"
+                f"Personality: {npc.personality}\n"
+                f"Goal: {npc.goal}\n"
+                f"Current Disposition: {current_disposition}\n"
+                f"NPC Items: {npc_items}\n"
+                f"Player Items: {player_items}\n\n"
+                f"Recent Events:\n{recent_events}\n\n"
+                f"Recent Conversation Context:\n{conversation_context}\n"
+                f"Based on the NPC's personality and the recent events, should their disposition change? "
+                f"If so, what should the new disposition be?"
+            )
+
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_prompt}
+            ]
+
+            response = litellm.completion(
+                model=DEFAULT_LLM_MODEL,
+                messages=messages,
+                max_tokens=150,
+                temperature=0.3,  # Some creativity but still consistent
+                response_format={"type": "json_object"}
+            )
+            
+            raw_response_content = response.choices[0].message.content
+            
+            if not raw_response_content:
+                rprint(Text("Game Master disposition analysis returned empty response.", style="dim yellow"))
+                return npc.disposition
+
+            parsed_json = json.loads(raw_response_content)
+            should_update = parsed_json.get("should_update", False)
+            new_disposition = parsed_json.get("new_disposition", "")
+            reasoning = parsed_json.get("reasoning", "")
+
+            if not isinstance(should_update, bool):
+                rprint(Text("Game Master disposition analysis returned invalid format.", style="dim yellow"))
+                return npc.disposition
+
+            if should_update and isinstance(new_disposition, str) and new_disposition.strip():
+                old_disposition = npc.disposition
+                npc.disposition = new_disposition.strip()
+                
+                # Game Master Analysis Section with clear separation
+                console.line()
+                rprint(f"🧠 [dim cyan]Game Master: {reasoning}[/dim cyan]")
+                rprint(f"💭 [yellow]{npc.name}'s disposition changed: {old_disposition} → {new_disposition}[/yellow]")
+                console.line()
+                return new_disposition
+            else:
+                # No change needed
+                return npc.disposition
+
+        except json.JSONDecodeError as e:
+            rprint(Text(f"Error parsing Game Master disposition analysis: {e}", style="dim yellow"))
+            return npc.disposition
+        except Exception as e:
+            rprint(Text(f"Error during disposition analysis: {e}", style="dim yellow"))
+            return npc.disposition
 
     def provide_epilogue(self, scenario: Scenario, player: Player, npc: Character, game_outcome: str) -> str:
         """Generates a concluding narration for the scenario based on the outcome."""

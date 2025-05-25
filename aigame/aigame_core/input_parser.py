@@ -267,9 +267,6 @@ class InputParser:
             confidence = parsed.get('confidence', 0.0)
             reasoning = parsed.get('reasoning', '')
             
-            # Log classification for debugging
-            rprint(Text(f"Input classified as: {action_type} (confidence: {confidence:.2f})", style="dim cyan"))
-            
             return {
                 'success': True,
                 'action_type': action_type,
@@ -290,7 +287,9 @@ class InputParser:
                 'message': player_input.strip()
             },
             'success': True,
-            'error_message': ''
+            'error_message': '',
+            'confidence': classification.get('confidence', 0.0),
+            'reasoning': classification.get('reasoning', '')
         }
     
     def _extract_give_parameters(
@@ -357,7 +356,9 @@ class InputParser:
                     'original_message': player_input
                 },
                 'success': True,
-                'error_message': ''
+                'error_message': '',
+                'confidence': parsed.get('confidence', 0.0),
+                'reasoning': parsed.get('reasoning', '')
             }
             
         except Exception as e:
@@ -446,7 +447,9 @@ class InputParser:
                     'original_message': player_input
                 },
                 'success': True,
-                'error_message': ''
+                'error_message': '',
+                'confidence': parsed.get('confidence', 0.0),
+                'reasoning': parsed.get('reasoning', '')
             }
             
         except Exception as e:
@@ -522,7 +525,9 @@ class InputParser:
                     'original_message': player_input
                 },
                 'success': True,
-                'error_message': ''
+                'error_message': '',
+                'confidence': parsed.get('confidence', 0.0),
+                'reasoning': parsed.get('reasoning', '')
             }
             
         except Exception as e:
@@ -564,7 +569,9 @@ class InputParser:
                 'custom_message': player_input.strip() if player_input.strip() else None
             },
             'success': True,
-            'error_message': ''
+            'error_message': '',
+            'confidence': classification.get('confidence', 0.0),
+            'reasoning': classification.get('reasoning', '')
         }
     
     def _extract_decline_parameters(
@@ -598,5 +605,7 @@ class InputParser:
                 'custom_message': player_input.strip() if player_input.strip() else None
             },
             'success': True,
-            'error_message': ''
+            'error_message': '',
+            'confidence': classification.get('confidence', 0.0),
+            'reasoning': classification.get('reasoning', '')
         } 
