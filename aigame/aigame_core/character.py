@@ -38,10 +38,12 @@ class Character:
         self.items: list[Item] = list(items) # Now a list of Item objects
         self.interaction_history: InteractionHistory = InteractionHistory()
         self.active_offer: dict | None = None # To store details of an item offered to this character
+        self.active_trade_proposal: dict | None = None # To store details of a trade proposal made to this character
+        self.direction: str = "" # Game Master's narrative direction for this character
 
     def __str__(self) -> str:
         # This format is already quite panel-friendly
-        return (
+        base_info = (
             f"Name: {self.name}\n"
             f"Personality: {self.personality}\n"
             f"Goal: {self.goal}\n"
@@ -49,14 +51,19 @@ class Character:
             # Use item.name for display
             f"Items: {', '.join(item.name for item in self.items) if self.items else 'None'}"
         )
+        
+        # Add direction if it exists
+        if self.direction:
+            base_info += f"\nCurrent Direction: {self.direction}"
+            
+        return base_info
 
     def add_item(self, item: Item) -> None:
         if not isinstance(item, Item):
             raise ValueError("Item must be an Item object.")
         try:
             self.items.append(item)
-            # Message when character receives an item
-            rprint(Text.assemble(Text("EVENT: ", style="dim white"), Text(f"{self.name} received '{item.name}'.", style="white")))
+            # Removed verbose event message to reduce clutter
         except Exception as e:
             rprint(f"[bold red]Error adding item for {self.name}: {e}[/bold red]")
 
@@ -102,6 +109,8 @@ class Character:
     def _prepare_llm_messages(self, current_location: Location) -> list[MessageEntry]:
         items_str = ", ".join(item.name for item in self.items) if self.items else "nothing"
         location_info = f"You are currently in: {current_location.name}. {current_location.description}"
+        
+        # Build the system message with direction if it exists
         system_message_content = (
             f"You are {self.name}.\n"
             f"Your personality: {self.personality}\n"
@@ -109,20 +118,224 @@ class Character:
             f"Your current disposition/state of mind: {self.disposition}\n"
             f"You are currently carrying: {items_str}.\n"
             f"{location_info}\n\n"
+        )
+        
+        # Add direction if provided by Game Master
+        if self.direction:
+            system_message_content += (
+                f"NARRATIVE DIRECTION: {self.direction}\n"
+                f"This direction should guide your responses and actions to help shape the story. "
+                f"Incorporate this guidance naturally into your character's behavior.\n\n"
+            )
+        
+        system_message_content += (
             f"You will act and speak as {self.name} based on this information. Do not break character. "
             f"Your dialogue should reflect your thoughts and speech. "
             f"Only provide {self.name}'s next line of dialogue in response to the user. "
             f"The user may perform actions (like giving you items, complimenting you, or insulting you). These will be described in their message (e.g., \"I hand the item_name over to you.\", \"You seem very wise.\", or \"Your wares are terrible!\"). React naturally to such actions, both in your dialogue and by considering changes to your disposition."
             f"When the player uses a command like '/give ItemName', they are OFFERING you the item. It is not yet in your possession. Their message might look like '*I offer you the ItemName. Do you accept?*'. To accept the offered item, you MUST use the 'accept_item_offer' tool. If you do not want the item, simply state that in your dialogue."
+            f"Trade proposals are handled automatically before you speak - you don't need to worry about them in your dialogue. Just respond naturally to the outcome. "
+            f"If a trade was just completed, acknowledge it naturally in your response. "
             f"Pay close attention to any 'SYSTEM_ALERT' or 'SYSTEM_OBSERVATION' messages in the history. These provide direct prompts or context for you to consider significant changes or facts."
             f"You have tools available to interact with the game world. These include: "
             f"1. 'give_item_to_user': Use this tool if you willingly decide to give an item YOU possess to the user. You MUST use this tool to transfer an item. Clearly state your intention first." 
             f"2. 'change_disposition': Use this to update your internal disposition/state of mind in response to significant events or interactions (positive or negative). Clearly state your intention or reasoning first."
             f"3. 'accept_item_offer': If the player has offered you an item (their message will indicate this, e.g., '*I offer you ItemName.*'), use this tool to formally accept and take the item. State your intention to accept before using the tool."
         )
+        
         messages: list[MessageEntry] = [{"role": "system", "content": system_message_content}]
         messages.extend(self.interaction_history.get_llm_history())
         return messages
+
+    def handle_standing_trade_offer(self, player_object: 'Player', current_location: 'Location') -> str | None:
+        """
+        Handles any standing trade offer before generating dialogue.
+        Uses AI to decide whether to accept, reject, or counter the trade.
+        Returns a message about the trade decision, or None if no trade offer exists.
+        """
+        if not self.active_trade_proposal:
+            return None
+            
+        from .player import Player
+        
+        # Get trade proposal details
+        player_item_name = self.active_trade_proposal.get("player_item_name", "")
+        npc_item_name = self.active_trade_proposal.get("npc_item_name", "")
+        player_item_object = self.active_trade_proposal.get("player_item_object")
+        npc_item_object = self.active_trade_proposal.get("npc_item_object")
+        offered_by_name = self.active_trade_proposal.get("offered_by_name", "Player")
+        
+        # Prepare context for AI decision
+        items_str = ", ".join(item.name for item in self.items) if self.items else "nothing"
+        location_info = f"You are currently in: {current_location.name}. {current_location.description}"
+        
+        system_message_content = (
+            f"You are {self.name}.\n"
+            f"Your personality: {self.personality}\n"
+            f"Your current goal: {self.goal}\n"
+            f"Your current disposition/state of mind: {self.disposition}\n"
+            f"You are currently carrying: {items_str}.\n"
+            f"{location_info}\n\n"
+        )
+        
+        if self.direction:
+            system_message_content += (
+                f"NARRATIVE DIRECTION: {self.direction}\n"
+                f"This direction should guide your decision-making.\n\n"
+            )
+        
+        system_message_content += (
+            f"TRADE PROPOSAL: {offered_by_name} has proposed trading their '{player_item_name}' for your '{npc_item_name}'.\n"
+            f"You MUST decide on this trade proposal. You have three options:\n"
+            f"1. ACCEPT - Accept the trade as proposed\n"
+            f"2. REJECT - Decline the trade\n"
+            f"3. COUNTER - Propose a different 1-for-1 trade (only using items that actually exist)\n\n"
+            f"Available items for counter-proposals:\n"
+            f"- Player has: {', '.join(item.name for item in player_object.items)}\n"
+            f"- You have: {', '.join(item.name for item in self.items)}\n\n"
+            f"IMPORTANT COUNTER-PROPOSAL RULES:\n"
+            f"- A counter-proposal MUST be different from the original proposal\n"
+            f"- Original proposal: Player gives '{player_item_name}' → You give '{npc_item_name}'\n"
+            f"- Counter-proposals are 1-for-1 trades only (one item for one item)\n"
+            f"- Examples: Ask for a different item from the player, or offer a different item yourself\n"
+            f"- If you want multiple items, use REJECT and explain in your dialogue\n\n"
+            f"Respond with a JSON object containing:\n"
+            f"- 'decision': 'ACCEPT', 'REJECT', or 'COUNTER'\n"
+            f"- 'spoken_response': Your dialogue explaining the decision\n"
+            f"- 'counter_player_item': (only if COUNTER) EXACT name of ONE item you want from player\n"
+            f"- 'counter_npc_item': (only if COUNTER) EXACT name of ONE item you're willing to offer\n"
+            f"- 'reasoning': Brief internal reasoning for your decision\n\n"
+            f"IMPORTANT: For counter-proposals, only use EXACT item names from the available lists above. "
+            f"If you want multiple items or complex terms, use REJECT and explain in your dialogue.\n"
+            f"Consider your personality, goals, and the value of the items when deciding."
+        )
+        
+        # Get conversation history for context
+        messages = [{"role": "system", "content": system_message_content}]
+        messages.extend(self.interaction_history.get_llm_history())
+        
+        try:
+            response = litellm.completion(
+                model="openai/gpt-4.1-mini",
+                messages=messages,
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
+            
+            raw_response = response.choices[0].message.content
+            if not raw_response:
+                # Fallback to rejection if no response
+                self.active_trade_proposal = None
+                return f"[{self.name} seems confused by the trade proposal and doesn't respond clearly.]"
+            
+            try:
+                decision_data = json.loads(raw_response)
+                decision = decision_data.get("decision", "REJECT").upper()
+                spoken_response = decision_data.get("spoken_response", "")
+                reasoning = decision_data.get("reasoning", "No reasoning provided")
+                
+                rprint(Text.assemble(Text("TRADE DECISION: ", style="dim yellow"), 
+                                   Text(f"{self.name} decided to {decision}. Reasoning: {reasoning}", style="yellow")))
+                
+                if decision == "ACCEPT":
+                    # Execute the trade
+                    if (player_item_object and npc_item_object and 
+                        player_object.has_item(player_item_object) and self.has_item(npc_item_object)):
+                        
+                        if player_object.remove_item(player_item_object) and self.remove_item(npc_item_object):
+                            self.add_item(player_item_object)  # NPC gets player's item
+                            player_object.add_item(npc_item_object)  # Player gets NPC's item
+                            rprint(Text.assemble(Text("TRADE COMPLETED: ", style="dim bright_green"), 
+                                               Text(f"{self.name} traded '{npc_item_name}' for '{player_item_name}'.", style="bright_green")))
+                            self.active_trade_proposal = None
+                            
+                            # Add system message to inform AI about the completed trade
+                            trade_completion_message = f"SYSTEM_ALERT: Trade completed successfully. You just traded your '{npc_item_name}' for the player's '{player_item_name}'. The exchange is done. Respond naturally to this completed transaction."
+                            self.interaction_history.add_entry(role="system", content=trade_completion_message)
+                            
+                            return spoken_response
+                        else:
+                            self.active_trade_proposal = None
+                            return f"[Trade failed due to item transfer error. {spoken_response}]"
+                    else:
+                        self.active_trade_proposal = None
+                        return f"[Trade failed - one party no longer has the required items. {spoken_response}]"
+                
+                elif decision == "COUNTER":
+                    counter_player_item = decision_data.get("counter_player_item", "")
+                    counter_npc_item = decision_data.get("counter_npc_item", "")
+                    
+                    # Validate that counter-proposal is actually different from original
+                    if (counter_player_item.lower() == player_item_name.lower() and 
+                        counter_npc_item.lower() == npc_item_name.lower()):
+                        rprint(Text("Counter-proposal is identical to original - treating as ACCEPT", style="dim yellow"))
+                        # Execute the trade as if it was accepted
+                        if (player_item_object and npc_item_object and 
+                            player_object.has_item(player_item_object) and self.has_item(npc_item_object)):
+                            
+                            if player_object.remove_item(player_item_object) and self.remove_item(npc_item_object):
+                                self.add_item(player_item_object)  # NPC gets player's item
+                                player_object.add_item(npc_item_object)  # Player gets NPC's item
+                                rprint(Text.assemble(Text("TRADE COMPLETED: ", style="dim bright_green"), 
+                                                   Text(f"{self.name} traded '{npc_item_name}' for '{player_item_name}'.", style="bright_green")))
+                                self.active_trade_proposal = None
+                                
+                                # Add system message to inform AI about the completed trade
+                                trade_completion_message = f"SYSTEM_ALERT: Trade completed successfully. You just traded your '{npc_item_name}' for the player's '{player_item_name}'. The exchange is done. Respond naturally to this completed transaction."
+                                self.interaction_history.add_entry(role="system", content=trade_completion_message)
+                                
+                                return spoken_response
+                            else:
+                                self.active_trade_proposal = None
+                                return f"[Trade failed due to item transfer error. {spoken_response}]"
+                        else:
+                            self.active_trade_proposal = None
+                            return f"[Trade failed - one party no longer has the required items. {spoken_response}]"
+                    
+                    if counter_player_item and counter_npc_item:
+                        # Verify the counter-proposal items exist
+                        if player_object.has_item(counter_player_item) and self.has_item(counter_npc_item):
+                            # Get the actual item objects
+                            counter_player_obj = next((item for item in player_object.items if item.name.lower() == counter_player_item.lower()), None)
+                            counter_npc_obj = next((item for item in self.items if item.name.lower() == counter_npc_item.lower()), None)
+                            
+                            if counter_player_obj and counter_npc_obj:
+                                # Update the trade proposal with counter terms
+                                self.active_trade_proposal = {
+                                    "player_item_name": counter_player_obj.name,
+                                    "npc_item_name": counter_npc_obj.name,
+                                    "player_item_object": counter_player_obj,
+                                    "npc_item_object": counter_npc_obj,
+                                    "offered_by_name": self.name,  # Counter-proposal is from NPC
+                                    "offered_by_object": self
+                                }
+                                rprint(Text.assemble(Text("COUNTER-PROPOSAL: ", style="dim cyan"), 
+                                                   Text(f"{self.name} proposes '{counter_npc_item}' for '{counter_player_item}' instead.", style="cyan")))
+                                return spoken_response
+                            else:
+                                self.active_trade_proposal = None
+                                return f"[Counter-proposal failed - couldn't find item objects. {spoken_response}]"
+                        else:
+                            self.active_trade_proposal = None
+                            return f"[Counter-proposal failed - items don't exist. {spoken_response}]"
+                    else:
+                        # Invalid counter-proposal, treat as rejection
+                        self.active_trade_proposal = None
+                        return f"{spoken_response}"
+                
+                else:  # REJECT or any other value
+                    self.active_trade_proposal = None
+                    return spoken_response
+                    
+            except json.JSONDecodeError:
+                # Fallback to rejection if JSON parsing fails
+                self.active_trade_proposal = None
+                return f"[{self.name} seems confused by the trade proposal and declines.]"
+                
+        except Exception as e:
+            rprint(Text(f"Error handling trade offer for {self.name}: {e}", style="bold red"))
+            self.active_trade_proposal = None
+            return f"[{self.name} seems distracted and doesn't respond to the trade proposal.]"
 
     def get_ai_response(self, player_object: 'Player', current_location: Location) -> str | None:
         from .player import Player # Corrected import: Import Player here, inside the method
@@ -238,15 +451,13 @@ class Character:
                         elif function_name == "change_disposition":
                             new_disposition_value = args.get("new_disposition_state")
                             reason_for_change = args.get("reason", "No specific reason stated by AI.")
-                            # rprint(Text(f"SYSTEM: AI ({self.name}) attempting to change disposition to '{new_disposition_value}'. Reason: {reason_for_change}", style="yellow"))
-                            rprint(Text.assemble(Text("AI EVENT: ", style="dim yellow"), Text(f"{self.name} (AI) is considering a disposition change to '{new_disposition_value}'. Reason: {reason_for_change}", style="yellow")))
+                            # Removed verbose AI event message to reduce clutter
                             if not new_disposition_value or not isinstance(new_disposition_value, str):
                                 tool_result_content = "Error: new_disposition_state not provided or invalid."
                             else:
                                 self.disposition = new_disposition_value
                                 tool_result_content = f"{self.name}'s disposition changed to: '{self.disposition}'."
-                                # rprint(Text(f"SYSTEM: {self.name}'s disposition is now '{self.disposition}'.", style="bright_cyan"))
-                                rprint(Text.assemble(Text("AI EVENT: ", style="dim bright_cyan"), Text(f"{self.name}'s disposition (self-initiated) is now '{self.disposition}'.", style="bright_cyan")))
+                                # Removed verbose AI event message - disposition changes will be shown in game loop
                         elif function_name == "accept_item_offer":
                             item_name_to_accept = args.get("item_name")
                             reason_for_accepting = args.get("reason", "No specific reason stated by AI.")
@@ -340,13 +551,20 @@ class Character:
                 name_for_error = data.get("name", "Unknown") # Get name from data for better error message
                 raise ValueError(f"Failed to load item '{item_name}' for character '{name_for_error}': {e}") from e
         
-        return cls(
+        character = cls(
             name=name,
             personality=personality,
             goal=goal,
             disposition=disposition,
             items=parsed_items
         )
+        
+        # Set direction if provided in data (optional field)
+        direction = data.get("direction", "")
+        if direction and isinstance(direction, str):
+            character.direction = direction
+            
+        return character
 
 def load_character_from_file(character_name: str, base_directory_path: str) -> Character:
     """

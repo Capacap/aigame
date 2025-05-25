@@ -232,3 +232,231 @@ class GameMaster:
         except Exception as e:
             rprint(Text(f"[bold red]Error during GM Disposition AI assessment: {e}. Defaulting to no change.[/bold red]"))
             return False, "", "" 
+
+    def assess_narrative_direction(
+        self,
+        player: Player,
+        npc: Character,
+        scenario: Scenario,
+        player_message: str,
+        npc_response: str | None,
+        victory_condition: dict
+    ) -> tuple[bool, str, str]:
+        """
+        Assesses if the NPC should receive new narrative direction based on the current story state.
+        Returns a tuple: (should_provide_direction: bool, new_direction: str, reason: str)
+        Empty strings for new_direction and reason if should_provide_direction is False.
+        """
+        if not isinstance(player, Player):
+            raise ValueError("Invalid player object provided.")
+        if not isinstance(npc, Character):
+            raise ValueError("Invalid NPC object provided.")
+        if not isinstance(scenario, Scenario):
+            raise ValueError("Invalid scenario object provided.")
+        if not isinstance(player_message, str):
+            player_message = "[Player performed an action or said nothing]" if not player_message else player_message
+        if not isinstance(victory_condition, dict):
+            raise ValueError("Invalid victory condition provided.")
+
+        # Gather current story state
+        player_items_str = ", ".join(item.name for item in player.items) if player.items else "None"
+        npc_items_str = ", ".join(item.name for item in npc.items) if npc.items else "None"
+        
+        # Describe victory condition for context
+        vc_type = victory_condition.get("type")
+        vc_item_name = victory_condition.get("item_name")
+        vc_from_npc = victory_condition.get("from_npc", False)
+        
+        vc_description = "Unknown victory condition."
+        if vc_type == "PLAYER_OBTAINS_ITEM":
+            vc_description = f"The player must obtain '{vc_item_name}'"
+            if vc_from_npc:
+                vc_description += f" from the NPC"
+
+        story_context = (
+            f"Scenario: {scenario.name}\n"
+            f"Scenario Description: {scenario.description}\n"
+            f"Victory Condition: {vc_description}\n\n"
+            f"Current Story State:\n"
+            f"- Player ({player.name}) Items: [{player_items_str}]\n"
+            f"- NPC ({npc.name}) Items: [{npc_items_str}]\n"
+            f"- NPC Personality: {npc.personality}\n"
+            f"- NPC Goal: {npc.goal}\n"
+            f"- NPC Disposition: {npc.disposition}\n"
+            f"- NPC Current Direction: {npc.direction if npc.direction else 'None'}"
+        )
+
+        interaction_summary = (
+            f"Latest interaction:\n"
+            f"{player.name} (Player): \"{player_message}\"\n"
+            f"{npc.name} (NPC): \"{npc_response if npc_response else '[No verbal response]'}\""
+        )
+
+        system_prompt = (
+            "You are a narrative Game Master AI. Your role is to provide subtle story direction to NPCs "
+            "to help guide the narrative toward interesting developments and the scenario's victory condition. "
+            "Analyze the current story state and latest interaction to determine if the NPC needs new narrative direction. "
+            "Consider factors like: story progression, proximity to victory condition, character motivations, "
+            "dramatic tension, and natural story flow. "
+            "Direction should be subtle guidance that helps the NPC make choices that advance the story "
+            "while staying true to their personality and goals. "
+            "Examples of good direction: 'Consider being more forthcoming about your knowledge', "
+            "'Show growing trust but maintain some caution', 'Hint at the importance of the item you possess', "
+            "'Begin to reveal your true motivations', 'Express concern about the player's intentions'. "
+            "Only provide direction if it would meaningfully advance the story or create interesting narrative moments. "
+            "Avoid direction that would force specific actions or break character consistency. "
+            "Respond ONLY with a JSON object with three keys: 'should_provide_direction' (boolean), "
+            "'new_direction' (string, or empty if no direction needed), and 'reason' (string, or empty if no direction needed)."
+        )
+
+        user_prompt = (
+            f"{story_context}\n\n"
+            f"{interaction_summary}\n\n"
+            "Based on the scenario, current story state, and latest interaction, should the NPC receive "
+            "new narrative direction to help advance the story? Provide your response as a JSON object."
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        try:
+            response = litellm.completion(
+                model="openai/gpt-4.1-mini",
+                messages=messages,
+                temperature=0.3, # Slightly creative but focused
+                response_format={"type": "json_object"}
+            )
+            raw_response_content = response.choices[0].message.content
+            
+            if not raw_response_content:
+                rprint(Text("GM Direction AI returned empty response. Assuming no direction needed.", style="dim yellow"))
+                return False, "", ""
+
+            parsed_json = json.loads(raw_response_content)
+
+            should_provide_direction = parsed_json.get("should_provide_direction", False)
+            new_direction = parsed_json.get("new_direction", "")
+            reason = parsed_json.get("reason", "")
+
+            if not isinstance(should_provide_direction, bool):
+                rprint(Text(f"GM Direction AI: 'should_provide_direction' is not a boolean. Defaulting to False. JSON: {parsed_json}", style="red"))
+                return False, "", ""
+            
+            if should_provide_direction and (not isinstance(new_direction, str) or not new_direction):
+                rprint(Text(f"GM Direction AI: 'should_provide_direction' is True but 'new_direction' is invalid. Reverting to no direction. JSON: {parsed_json}", style="red"))
+                return False, "", ""
+            
+            if should_provide_direction and (not isinstance(reason, str) or not reason):
+                rprint(Text(f"GM Direction AI: 'should_provide_direction' is True but 'reason' is invalid. Using default reason. JSON: {parsed_json}", style="yellow"))
+                reason = "GM determined new direction would help advance the story."
+
+            return should_provide_direction, new_direction if should_provide_direction else "", reason if should_provide_direction else ""
+
+        except json.JSONDecodeError as e:
+            rprint(Text(f"[bold red]Error decoding JSON from GM Direction AI: {e}. Raw: '{raw_response_content}'. Defaulting to no direction.[/bold red]"))
+            return False, "", ""
+        except Exception as e:
+            rprint(Text(f"[bold red]Error during GM Direction AI assessment: {e}. Defaulting to no direction.[/bold red]"))
+            return False, "", "" 
+
+    def parse_trade_proposal(
+        self,
+        player: Player,
+        npc: Character,
+        trade_message: str
+    ) -> tuple[bool, str, str, str]:
+        """
+        Parses a natural language trade proposal to extract item names.
+        Returns a tuple: (is_valid_trade: bool, player_item_name: str, npc_item_name: str, reason: str)
+        Empty strings for item names and reason if is_valid_trade is False.
+        """
+        if not isinstance(player, Player):
+            raise ValueError("Invalid player object provided.")
+        if not isinstance(npc, Character):
+            raise ValueError("Invalid NPC object provided.")
+        if not isinstance(trade_message, str) or not trade_message.strip():
+            return False, "", "", "Trade message cannot be empty."
+
+        # Get available items for context
+        player_items_str = ", ".join(f"'{item.name}'" for item in player.items) if player.items else "None"
+        npc_items_str = ", ".join(f"'{item.name}'" for item in npc.items) if npc.items else "None"
+
+        system_prompt = (
+            "You are a Game Master AI specialized in parsing trade proposals. Your task is to analyze "
+            "a player's natural language trade message and extract the specific item names being proposed for trade. "
+            "The player wants to trade one of their items for one of the NPC's items. "
+            "Look for phrases like 'I offer my X for your Y', 'trade my X for your Y', 'exchange my X for your Y', etc. "
+            "Extract the EXACT item names as they appear in the available inventories. "
+            "Be flexible with case sensitivity and partial matches - if the player says 'bag of coins' and the inventory has 'Bag of Coins', that's a match. "
+            "Similarly, 'cypher' should match 'translation cypher', 'amulet' should match 'Ancient Amulet', 'key' should match 'Echo Chamber Key', etc. "
+            "Use your best judgment to match player descriptions to actual item names, but be conservative - only match if you're confident. "
+            "If the message doesn't clearly propose a trade between specific items, or if you can't confidently match the mentioned items "
+            "to the available inventories, mark it as invalid. "
+            "Respond ONLY with a JSON object with four keys: "
+            "'is_valid_trade' (boolean), 'player_item_name' (string, exact name from player inventory), "
+            "'npc_item_name' (string, exact name from NPC inventory), and 'reason' (string, explanation)."
+        )
+
+        user_prompt = (
+            f"Player ({player.name}) available items: [{player_items_str}]\n"
+            f"NPC ({npc.name}) available items: [{npc_items_str}]\n\n"
+            f"Player's trade message: \"{trade_message}\"\n\n"
+            "Parse this message to extract the trade proposal. What item is the player offering, "
+            "and what item do they want in return? Provide your response as a JSON object."
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        try:
+            response = litellm.completion(
+                model="openai/gpt-4.1-mini",
+                messages=messages,
+                temperature=0.1, # Low temperature for precise parsing
+                response_format={"type": "json_object"}
+            )
+            raw_response_content = response.choices[0].message.content
+            
+            if not raw_response_content:
+                rprint(Text("GM Trade Parser returned empty response. Treating as invalid trade.", style="dim yellow"))
+                return False, "", "", "Failed to parse trade proposal."
+
+            parsed_json = json.loads(raw_response_content)
+
+            is_valid_trade = parsed_json.get("is_valid_trade", False)
+            player_item_name = parsed_json.get("player_item_name", "")
+            npc_item_name = parsed_json.get("npc_item_name", "")
+            reason = parsed_json.get("reason", "")
+
+            if not isinstance(is_valid_trade, bool):
+                rprint(Text(f"GM Trade Parser: 'is_valid_trade' is not a boolean. Treating as invalid. JSON: {parsed_json}", style="red"))
+                return False, "", "", "Invalid response format from trade parser."
+            
+            if is_valid_trade:
+                if not isinstance(player_item_name, str) or not player_item_name:
+                    rprint(Text(f"GM Trade Parser: Valid trade but 'player_item_name' is invalid. JSON: {parsed_json}", style="red"))
+                    return False, "", "", "Could not identify player's item in trade proposal."
+                
+                if not isinstance(npc_item_name, str) or not npc_item_name:
+                    rprint(Text(f"GM Trade Parser: Valid trade but 'npc_item_name' is invalid. JSON: {parsed_json}", style="red"))
+                    return False, "", "", "Could not identify NPC's item in trade proposal."
+                
+                # Verify the items actually exist in the inventories
+                if not player.has_item(player_item_name):
+                    return False, "", "", f"Player does not have '{player_item_name}' to trade."
+                
+                if not npc.has_item(npc_item_name):
+                    return False, "", "", f"NPC does not have '{npc_item_name}' to trade."
+
+            return is_valid_trade, player_item_name if is_valid_trade else "", npc_item_name if is_valid_trade else "", reason
+
+        except json.JSONDecodeError as e:
+            rprint(Text(f"[bold red]Error decoding JSON from GM Trade Parser: {e}. Raw: '{raw_response_content}'. Treating as invalid trade.[/bold red]"))
+            return False, "", "", "Failed to parse trade proposal due to JSON error."
+        except Exception as e:
+            rprint(Text(f"[bold red]Error during GM Trade Parsing: {e}. Treating as invalid trade.[/bold red]"))
+            return False, "", "", f"Error parsing trade proposal: {str(e)}" 

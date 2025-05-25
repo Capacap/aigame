@@ -63,24 +63,24 @@ def load_scenario_and_entities(scenario_name_to_load: str):
 
 def display_initial_state(player: Player, npc: Character, location: Location):
     """Displays the initial state of the player, NPC, and current location."""
-    rprint(Panel(Text(f"{location.name}\n\n{location.description}"), title="Current Location", border_style="yellow", expand=False))
+    # Simplified initial display - just the essentials
     console.line()
-
-    player_state_text = Text()
-    player_state_text.append(f"Name: {player.name}\n", style="bold")
-    player_state_text.append(f"Items: {', '.join(item.name for item in player.items) if player.items else 'Nothing'}")
-    rprint(Panel(player_state_text, title="Player Initial State", border_style="blue"))
+    rprint(f"📍 [bold yellow]{location.name}[/bold yellow]")
+    rprint(f"   {location.description}")
     console.line()
-
-    rprint(Panel(str(npc), title="Character Initial State", border_style="green"))
+    
+    rprint(f"👤 [bold blue]{player.name}[/bold blue] | Items: [dim]{', '.join(item.name for item in player.items) if player.items else 'None'}[/dim]")
+    rprint(f"🤝 [bold green]{npc.name}[/bold green] | Items: [dim]{', '.join(item.name for item in npc.items) if npc.items else 'None'}[/dim]")
     console.line()
-    rprint(Panel(f"Starting Interactive Conversation with {npc.name}... (Type 'quit' to end)", title_align="center", border_style="dim white"))
+    
+    rprint(f"[dim]Type '/help' for commands[/dim]")
+    console.line()
 
 # Regex to capture optional dialogue and an optional /give command
 # It captures: (dialogue_part) (full_command_part including /give) (item_name_for_give)
 # COMMAND_REGEX = re.compile(r"^(.*?)(?:\s*(\/give\s+(.+)))?$", re.IGNORECASE) # Old regex, no longer needed
 
-def handle_player_action(player1: Player, npc: Character, player_msg: str) -> bool:
+def handle_player_action(player1: Player, npc: Character, player_msg: str, current_location: Location) -> bool:
     """Handles the player's action, which must be a sequence of commands. Returns True if NPC should respond."""
     original_player_msg_stripped = player_msg.strip()
 
@@ -88,6 +88,14 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str) -> bo
         rprint(Text("Please enter a command or a sequence of commands (e.g., /say Hello, /give ItemName).", style="bold yellow"))
         console.line(1)
         return False
+
+    # Handle backward compatibility for non-slash quit and help
+    if original_player_msg_stripped.lower() == "quit":
+        return "QUIT"
+    
+    if original_player_msg_stripped.lower() == "help":
+        display_available_commands()
+        return "HELP_SHOWN"
 
     if not original_player_msg_stripped.startswith("/"):
         rprint(Text("All input must start with a command (e.g., /say Hello). Plain text is not processed.", style="bold red"))
@@ -151,10 +159,159 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str) -> bo
             }
             npc_should_respond = True # NPC should react to being offered an item
             performed_action_descriptions.append(f"*I hold out the {item_to_give_obj.name} for you. Do you accept?*")
-            rprint(Text.assemble(Text("EVENT: ", style="dim white"), Text(f"{player1.name} offers {item_to_give_obj.name} to {npc.name}.", style="white")))
+            rprint(f"💝 [dim]You offer the {item_to_give_obj.name} to {npc.name}[/dim]")
+
+        elif command_verb == "trade":
+            # Parse trade command using natural language processing
+            if not command_args:
+                rprint(Text("Usage: /trade <natural language trade proposal>", style="bold yellow"))
+                rprint(Text("Examples: '/trade I offer my bag of coins for your ancient amulet'", style="dim white"))
+                rprint(Text("          '/trade my translation cypher for your key'", style="dim white"))
+                continue
+            
+            # Use Game Master to parse the natural language trade proposal
+            temp_gm = GameMaster()
+            is_valid, player_item_name, npc_item_name, parse_reason = temp_gm.parse_trade_proposal(
+                player=player1,
+                npc=npc,
+                trade_message=command_args
+            )
+            
+            if not is_valid:
+                rprint(Text(f"Could not parse trade proposal: {parse_reason}", style="bold red"))
+                rprint(Text("Try being more specific about which items you want to trade.", style="dim yellow"))
+                rprint(Text("Example: 'I offer my bag of coins for your ancient amulet'", style="dim white"))
+                continue
+            
+            # Get the actual Item objects using the parsed names
+            player_item_obj = next((item for item in player1.items if item.name.lower() == player_item_name.lower()), None)
+            npc_item_obj = next((item for item in npc.items if item.name.lower() == npc_item_name.lower()), None)
+            
+            if not player_item_obj or not npc_item_obj:
+                rprint(Text(f"Error: Could not find the item objects for the parsed trade.", style="bold red"))
+                continue
+            
+            # Set up the trade proposal on the NPC
+            npc.active_trade_proposal = {
+                "player_item_name": player_item_obj.name,
+                "npc_item_name": npc_item_obj.name,
+                "player_item_object": player_item_obj,
+                "npc_item_object": npc_item_obj,
+                "offered_by_name": player1.name,
+                "offered_by_object": player1
+            }
+            npc_should_respond = True # NPC should react to the trade proposal
+            performed_action_descriptions.append(f"*{command_args}*")
+            rprint(f"🔄 [dim]You propose trading {player_item_obj.name} for {npc_item_obj.name}[/dim]")
+
+        elif command_verb == "accept":
+            # Accept an NPC's counter-proposal
+            if not npc.active_trade_proposal:
+                rprint(Text("There is no active trade proposal to accept.", style="bold red"))
+                continue
+            
+            # Check if this is an NPC counter-proposal (offered_by_name should be the NPC's name)
+            offered_by_name = npc.active_trade_proposal.get("offered_by_name", "")
+            if offered_by_name != npc.name:
+                rprint(Text("There is no NPC counter-proposal to accept. Use /trade to make a new proposal.", style="bold red"))
+                continue
+            
+            # Execute the trade from the counter-proposal
+            player_item_name = npc.active_trade_proposal.get("player_item_name", "")
+            npc_item_name = npc.active_trade_proposal.get("npc_item_name", "")
+            player_item_object = npc.active_trade_proposal.get("player_item_object")
+            npc_item_object = npc.active_trade_proposal.get("npc_item_object")
+            
+            if (player_item_object and npc_item_object and 
+                player1.has_item(player_item_object) and npc.has_item(npc_item_object)):
+                
+                if player1.remove_item(player_item_object) and npc.remove_item(npc_item_object):
+                    player1.add_item(npc_item_object)  # Player gets NPC's item
+                    npc.add_item(player_item_object)   # NPC gets player's item
+                    rprint(f"✅ [bright_green]Trade completed: {player_item_name} ↔ {npc_item_name}[/bright_green]")
+                    npc.active_trade_proposal = None
+                    
+                    # Clear any standing offers to prevent AI confusion
+                    npc.active_offer = None
+                    
+                    # Add system message to inform AI about the completed trade
+                    trade_completion_message = f"SYSTEM_ALERT: Trade completed successfully. You just traded your '{npc_item_name}' for the player's '{player_item_name}'. The exchange is done. Respond naturally to this completed transaction."
+                    npc.interaction_history.add_entry(role="system", content=trade_completion_message)
+                    
+                    # Add the player's acceptance message to dialogue history
+                    npc.add_dialogue_turn(speaker=player1.name, message=f"*I accept your counter-proposal and trade my {player_item_name} for your {npc_item_name}.*")
+                    
+                    # Get AI response to the completed trade
+                    ai_response = npc.get_ai_response(player_object=player1, current_location=current_location)
+                    if ai_response:
+                        console.line(1)
+                        npc_turn_text = Text()
+                        npc_turn_text.append(f"{npc.name}: ", style="bold green")
+                        npc_turn_text.append(ai_response)
+                        rprint(npc_turn_text)
+                    
+                    # Return special value to indicate response was handled
+                    return "TRADE_ACCEPTED"
+                else:
+                    rprint(Text("Trade failed due to item transfer error.", style="bold red"))
+                    npc.active_trade_proposal = None
+            else:
+                missing_items = []
+                if not player1.has_item(player_item_object):
+                    missing_items.append(f"You no longer have '{player_item_name}'")
+                if not npc.has_item(npc_item_object):
+                    missing_items.append(f"{npc.name} no longer has '{npc_item_name}'")
+                rprint(Text(f"Cannot complete trade - {', '.join(missing_items)}.", style="bold red"))
+                npc.active_trade_proposal = None
+
+        elif command_verb == "decline":
+            # Decline an NPC's counter-proposal
+            if not npc.active_trade_proposal:
+                rprint(Text("There is no active trade proposal to decline.", style="bold red"))
+                continue
+            
+            # Check if this is an NPC counter-proposal (offered_by_name should be the NPC's name)
+            offered_by_name = npc.active_trade_proposal.get("offered_by_name", "")
+            if offered_by_name != npc.name:
+                rprint(Text("There is no NPC counter-proposal to decline. The current proposal is yours.", style="bold red"))
+                continue
+            
+            # Clear the counter-proposal and inform the NPC
+            player_item_name = npc.active_trade_proposal.get("player_item_name", "")
+            npc_item_name = npc.active_trade_proposal.get("npc_item_name", "")
+            npc.active_trade_proposal = None
+            
+            # Clear any standing offers to prevent AI confusion
+            npc.active_offer = None
+            
+            # Add the player's decline message to dialogue history
+            npc.add_dialogue_turn(speaker=player1.name, message=f"*I decline your counter-proposal to trade my {player_item_name} for your {npc_item_name}.*")
+            
+            # Get AI response to the declined counter-proposal
+            ai_response = npc.get_ai_response(player_object=player1, current_location=current_location)
+            if ai_response:
+                console.line(1)
+                npc_turn_text = Text()
+                npc_turn_text.append(f"{npc.name}: ", style="bold green")
+                npc_turn_text.append(ai_response)
+                rprint(npc_turn_text)
+            
+            rprint(f"❌ [dim]You decline the counter-proposal[/dim]")
+            # Return special value to indicate response was handled
+            return "TRADE_DECLINED"
+
+        elif command_verb == "quit":
+            # Handle /quit command - return a special value to indicate quit
+            return "QUIT"
+        
+        elif command_verb == "help":
+            # Handle /help command - display commands and continue
+            display_available_commands()
+            # Return special value to indicate help was shown but no NPC response needed
+            return "HELP_SHOWN"
 
         else:
-            rprint(Text(f"Unknown command: '/{command_verb}'. Valid commands are /say and /give.", style="bold red"))
+            rprint(Text(f"Unknown command: '/{command_verb}'. Valid commands are /say, /give, /trade, /accept, /decline, /quit, and /help.", style="bold red"))
             # If player types "/nonsense", we probably don't want NPC to respond unless a /say was also there.
             # If npc_should_respond is already true from a /say, let it be. If not, this unknown command doesn't trigger it.
 
@@ -176,7 +333,7 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str) -> bo
         # Check if any command was attempted. If command_segments was populated but npc_should_respond is false,
         # it means all attempted commands failed or were unrecognized without a successful /say.
         if command_segments and not any(s.strip().lower().startswith("say") for s in command_segments):
-             rprint(Text("No action taken. Ensure your commands are valid (e.g., /say or /give) and arguments are correct.", style="yellow"))
+             rprint(Text("No action taken. Ensure your commands are valid (e.g., /say, /give, /trade, /accept, /decline) and arguments are correct.", style="yellow"))
         # If it started with /say but message was empty, that error is handled above. 
         # This path is for when input was like "/unknown_cmd" or "/give non_existent_item" with no /say.
 
@@ -184,6 +341,25 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str) -> bo
 
 def handle_npc_response(npc: Character, player_object: Player, current_location: Location) -> str | None:
     """Handles getting and printing the NPC's response. Returns the AI's spoken response string or None."""
+    
+    # First, handle any standing trade offer before generating dialogue
+    trade_response = npc.handle_standing_trade_offer(player_object, current_location)
+    
+    if trade_response:
+        # If there was a trade decision, display it and use it as the complete response
+        console.line(1)
+        npc_trade_text = Text()
+        npc_trade_text.append(f"{npc.name}: ", style="bold green")
+        npc_trade_text.append(trade_response)
+        rprint(npc_trade_text)
+        
+        # Add the trade response to dialogue history
+        npc.add_dialogue_turn(speaker=npc.name, message=trade_response)
+        
+        # Return the trade response as the complete NPC response for this turn
+        return trade_response
+    
+    # Only get regular AI response if there was no trade decision
     ai_response = npc.get_ai_response(player_object=player_object, current_location=current_location)
     console.line(1)
 
@@ -192,44 +368,54 @@ def handle_npc_response(npc: Character, player_object: Player, current_location:
         npc_turn_text.append(f"{npc.name}: ", style="bold green")
         npc_turn_text.append(ai_response)
         rprint(npc_turn_text)
-        # Add to history only if it's a meaningful spoken response, not just an internal thought prompt
-        # This is already handled by character.get_ai_response adding its own spoken part to history.
-        # if ai_response.strip() and not ai_response.startswith(f"[{npc.name}]"):
-        #     npc.add_dialogue_turn(speaker=npc.name, message=ai_response)
-        return ai_response # Return the response for GM assessment
+        return ai_response
     else:
         # This case might mean an error in get_ai_response or a deliberate empty response.
-        # get_ai_response already prints errors.
-        # If it's a deliberate empty (None) response and we want a placeholder:
         rprint(Text(f"[{npc.name} is silent or an error occurred determining a response.]", style="italic red"))
-        return None # Return None if no response or error
+        return None
 
-def display_interaction_state(player1: Player, npc: Character, old_player_items: list[str], old_npc_items: list[str], old_disposition: str):
-    """Displays the state of player and NPC items and NPC disposition after an interaction."""
-    console.line(1) 
-    state_panel_content = Text()
-    current_player_items_str = ", ".join(item.name for item in player1.items) if player1.items else 'None'
-    state_panel_content.append(f"Player ({player1.name}) Items: {current_player_items_str}\n", style="blue")
+def display_interaction_state(player1: Player, npc: Character, old_player_items: list[str], old_npc_items: list[str], old_disposition: str, old_direction: str = ""):
+    """Displays the state of player and NPC items, disposition, and direction after an interaction."""
     
+    # Check for important changes that need highlighting
     player_items_changed = old_player_items != [item.name for item in player1.items]
-    if player_items_changed:
-        state_panel_content.append(f"SYSTEM: Player inventory changed. Old: {old_player_items}, New: {[item.name for item in player1.items]}\n", style="dim bright_blue")
-    
-    current_npc_items_str = ", ".join(item.name for item in npc.items) if npc.items else 'None'
-    state_panel_content.append(f"Character ({npc.name}) Items: {current_npc_items_str}\n", style="green")
-    
     npc_items_changed = old_npc_items != [item.name for item in npc.items]
+    disposition_changed = old_disposition != npc.disposition
+    direction_changed = old_direction != npc.direction
+    
+    # Show active counter-proposal prominently if it exists
+    if npc.active_trade_proposal:
+        offered_by_name = npc.active_trade_proposal.get("offered_by_name", "")
+        if offered_by_name == npc.name:  # This is an NPC counter-proposal
+            player_item_name = npc.active_trade_proposal.get("player_item_name", "")
+            npc_item_name = npc.active_trade_proposal.get("npc_item_name", "")
+            console.line()
+            rprint(f"🔄 [bold bright_cyan]COUNTER-PROPOSAL: {npc.name} wants your {player_item_name} for their {npc_item_name}[/bold bright_cyan]")
+            rprint(f"   [dim cyan]Use /accept or /decline to respond[/dim cyan]")
+    
+    # Only show changes if something actually changed
+    changes_to_show = []
+    
+    if player_items_changed:
+        current_items = ', '.join(item.name for item in player1.items) if player1.items else 'None'
+        changes_to_show.append(f"👤 [blue]{player1.name}[/blue]: {current_items}")
+    
     if npc_items_changed:
-            state_panel_content.append(f"SYSTEM: NPC inventory changed. Old: {old_npc_items}, New: {[item.name for item in npc.items]}\n", style="dim bright_green")
+        current_items = ', '.join(item.name for item in npc.items) if npc.items else 'None'
+        changes_to_show.append(f"🤝 [green]{npc.name}[/green]: {current_items}")
     
-    state_panel_content.append(f"Character ({npc.name}) Disposition: {npc.disposition}", style="green")
-    if old_disposition != npc.disposition:
-        state_panel_content.append(f"\nSYSTEM: NPC disposition changed from '{old_disposition}' to '{npc.disposition}'.", style="bright_cyan")
+    if disposition_changed:
+        changes_to_show.append(f"💭 [cyan]{npc.name} feels: {npc.disposition}[/cyan]")
     
-    # Only show the panel if something actually changed or it's the first interaction (where old states might be empty)
-    # This avoids clutter if an interaction leads to no state changes.
-    # However, for debugging or explicit turn-by-turn state, always showing is fine. Let's always show for now.
-    rprint(Panel(state_panel_content, title="State After Interaction", expand=False, border_style="yellow"))
+    if direction_changed and npc.direction:
+        changes_to_show.append(f"🎯 [yellow]Story direction: {npc.direction}[/yellow]")
+    
+    # Only display if there are changes to show
+    if changes_to_show:
+        console.line()
+        for change in changes_to_show:
+            rprint(change)
+    
     console.line()
 
 
@@ -237,42 +423,45 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
     """Handles the main interaction loop between the player and NPC."""
     interaction_count = 0
     game_ended_by_victory = False # Flag to track if victory occurred
+    
+    # Display available commands at the start
+    display_available_commands()
+    
     while True:
         interaction_count += 1
-        console.rule(f"Interaction {interaction_count}", style="bold magenta")
-        console.line(1) # Adds a blank line after the rule for spacing
         
         # Store state before player/NPC turn for comparison
         old_disposition_for_turn = npc.disposition
+        old_direction_for_turn = npc.direction
         old_npc_items_for_turn = [item.name for item in npc.items] # Store names for simple comparison
         old_player_items_for_turn = [item.name for item in player1.items]
 
-        # Player's turn
-        # Display player's current inventory before the prompt
-        inventory_text = Text("Your Inventory: ", style="italic dim white")
-        if player1.items:
-            inventory_text.append(", ".join(item.name for item in player1.items), style="italic white")
-        else:
-            inventory_text.append("Empty", style="italic dim white")
-        rprint(inventory_text)
-        console.line(1) # Add a blank line for spacing
-
+        # Player's turn - simplified display
+        current_items = ', '.join(item.name for item in player1.items) if player1.items else 'None'
+        rprint(f"💼 [dim]Your items: {current_items}[/dim]")
+        
         player_prompt_text = Text()
-        player_prompt_text.append(f"{player1.name} (type '/give <item>' or 'quit' to end): ", style="bold blue")
+        player_prompt_text.append(f"{player1.name}: ", style="bold blue")
         player_msg = console.input(player_prompt_text)
 
-        if player_msg.lower() == "quit":
+        action_processed_successfully = handle_player_action(player1, npc, player_msg, current_location)
+
+        if action_processed_successfully == "QUIT":
             rprint(Text("Quitting conversation.", style="bold yellow"))
             # Provide epilogue for quitting
             epilogue = game_master.provide_epilogue(scenario, player1, npc, "PLAYER_QUIT")
             rprint(Panel(Text(epilogue, justify="left"), title="The Story Pauses...", border_style="bold yellow", expand=False))
-            # if npc: npc.add_dialogue_turn(speaker="Game Master", message=epilogue) # Epilogue added to history by GM later if needed
             console.line()
             break
 
-        action_processed_successfully = handle_player_action(player1, npc, player_msg)
+        if action_processed_successfully == "HELP_SHOWN":
+            # Help was displayed, continue to next interaction without NPC response
+            continue
 
-        if not action_processed_successfully:
+        if action_processed_successfully == "TRADE_ACCEPTED" or action_processed_successfully == "TRADE_DECLINED":
+            # Trade response was already handled in the command, skip to GM assessment
+            npc_actual_response_text = "Trade response handled"
+        elif not action_processed_successfully:
             # Player input was invalid or a command that failed without dialogue.
             # handle_player_action already printed the relevant error message.
             # Loop back to get new player input.
@@ -284,7 +473,7 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
         npc_actual_response_text = None 
 
         # NPC's turn (if applicable)
-        if action_processed_successfully: # If true, it means player did something that might elicit a response
+        if action_processed_successfully and action_processed_successfully not in ["TRADE_ACCEPTED", "TRADE_DECLINED"]: # If true, it means player did something that might elicit a response
             npc_actual_response_text = handle_npc_response(npc, player1, current_location) 
         else:
             # This else block might not be strictly necessary anymore if 'continue' is used for failed actions.
@@ -320,23 +509,42 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
             gm_log_message = f"SYSTEM_OBSERVATION (Game Master): NPC disposition changed to '{new_disp}'. Reason: {reason_for_change}"
             npc.interaction_history.add_entry(role="system", content=gm_log_message)
             # The display_interaction_state will show the change, but we can add a specific GM note if desired
-            rprint(Text(f"GAME MASTER: {npc.name}'s disposition is now '{new_disp}'. (Reason: {reason_for_change})", style="italic bright_magenta"))
+            # Removed verbose GM message - the change will be shown in display_interaction_state
             # We need to update old_disposition_for_turn if GM changed it, so display_interaction_state highlights it correctly.
             # However, display_interaction_state compares with the start-of-turn disposition. 
             # The GM change will be reflected as a change within the turn.
             # The `old_disposition_for_turn` is correctly what it was at the very start of this interaction_count.
 
+        # Game Master assesses narrative direction after disposition assessment
+        should_provide_direction, new_direction, direction_reason = game_master.assess_narrative_direction(
+            player=player1,
+            npc=npc,
+            scenario=scenario,
+            player_message=player_msg,
+            npc_response=npc_actual_response_text,
+            victory_condition=victory_condition
+        )
+
+        if should_provide_direction and new_direction:
+            old_direction = npc.direction
+            npc.direction = new_direction
+            # Log the GM's direction decision to interaction_history
+            gm_direction_message = f"NARRATIVE_DIRECTION (Game Master): {new_direction}. Reason: {direction_reason}"
+            npc.interaction_history.add_entry(role="system", content=gm_direction_message)
+            # Removed verbose GM direction message - the change will be shown in display_interaction_state
+
         # Display state changes after both player and NPC (if any) have acted, and GM assessment
-        display_interaction_state(player1, npc, old_player_items_for_turn, old_npc_items_for_turn, old_disposition_for_turn)
+        display_interaction_state(player1, npc, old_player_items_for_turn, old_npc_items_for_turn, old_disposition_for_turn, old_direction_for_turn)
             
         # Check victory condition
         if game_master.evaluate_victory_condition(player1, npc, victory_condition):
-            success_text = Text(f"SUCCESS! Victory condition met for the scenario!", style="bold bright_green")
-            final_disposition_text = Text(f"{npc.name}'s final disposition: {npc.disposition}", style="green")
-            rprint(Panel(Text.assemble(success_text, "\n", final_disposition_text), title="Scenario Outcome", border_style="bright_green"))
+            console.line()
+            rprint(f"🎉 [bold bright_green]SUCCESS! Victory condition achieved![/bold bright_green]")
+            rprint(f"💭 [green]{npc.name}'s final disposition: {npc.disposition}[/green]")
             
             # Provide epilogue for victory
             epilogue = game_master.provide_epilogue(scenario, player1, npc, "VICTORY")
+            console.line()
             rprint(Panel(Text(epilogue, justify="left"), title="Victory Achieved!", border_style="bold bright_green", expand=False))
             if npc: npc.add_dialogue_turn(speaker="Game Master", message=epilogue)
             console.line()
@@ -345,59 +553,58 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
 
 def display_final_summary(player1: Player, npc: Character):
     """Displays the final states of the player and NPC, and the conversation history."""
-    console.line(1)
-    console.rule("Final States", style="bold white")
-    console.line(1)
-    player_final_text = Text()
-    player_final_text.append(f"Name: {player1.name}\n", style="bold")
-    player_final_text.append(f"Items: {', '.join(item.name for item in player1.items) if player1.items else 'Nothing'}")
-    rprint(Panel(player_final_text, title="Final Player State", border_style="blue"))
-    console.line(1)
+    console.line()
+    rprint("[bold white]═══ Final Summary ═══[/bold white]")
+    console.line()
     
-    rprint(Panel(str(npc), title="Final Character State", border_style="green"))
-
-    console.line(1)
-    console.rule("Full Conversation History", style="bold white")
-    console.line(1)
-    history_text = Text()
+    # Final states in simple format
+    player_items = ', '.join(item.name for item in player1.items) if player1.items else 'None'
+    npc_items = ', '.join(item.name for item in npc.items) if npc.items else 'None'
+    
+    rprint(f"👤 [bold blue]{player1.name}[/bold blue] | Items: {player_items}")
+    rprint(f"🤝 [bold green]{npc.name}[/bold green] | Items: {npc_items} | Disposition: {npc.disposition}")
+    
+    # Conversation history in simple format
+    console.line()
+    rprint("[bold white]Conversation:[/bold white]")
+    
     full_history = npc.interaction_history.get_llm_history()
     if not full_history:
-            history_text.append("(No conversation took place)", style="italic dim white")
+        rprint("[dim]No conversation took place[/dim]")
     else:
         dialogue_turns = []
         for entry in full_history:
             if entry["role"] == "user":
-                dialogue_turns.append({"speaker": player1.name, "message": entry["content"], "style": "bold blue"})
-            elif entry["role"] == "assistant" and entry["content"]:
-                # Only include assistant messages that have actual content (spoken responses)
-                # Exclude tool call requests or purely functional messages without text for the player.
-                if not entry.get("tool_calls"): # If it has tool_calls, it's a request, not spoken dialogue yet.
-                    dialogue_turns.append({"speaker": npc.name, "message": entry["content"], "style": "bold green"})
-            # We are not displaying system messages or tool results in the final summary for brevity,
-            # but they are in npc.interaction_history if needed for debugging.
+                content = entry.get("content", "")
+                if content:  # Only add if there's actual content
+                    dialogue_turns.append({"speaker": player1.name, "message": content, "style": "blue"})
+            elif entry["role"] == "assistant":
+                content = entry.get("content", "")
+                if content:  # Only include assistant messages that have actual content (spoken responses)
+                    # Exclude tool call requests or purely functional messages without text for the player.
+                    if not entry.get("tool_calls"): # If it has tool_calls, it's a request, not spoken dialogue yet.
+                        dialogue_turns.append({"speaker": npc.name, "message": content, "style": "green"})
 
         if not dialogue_turns:
-            history_text.append("(No actual dialogue was exchanged)", style="italic dim white")
+            rprint("[dim]No actual dialogue was exchanged[/dim]")
         else:
-            num_dialogue_turns = len(dialogue_turns)
-            for i, turn in enumerate(dialogue_turns):
-                history_text.append(f"{turn['speaker']}: ", style=turn['style'])
-                history_text.append(f"{turn['message']}")
-                if i < num_dialogue_turns - 1:
-                    history_text.append("\n\n")
+            for turn in dialogue_turns:
+                rprint(f"[{turn['style']}]{turn['speaker']}:[/{turn['style']}] {turn['message']}")
+    
+    console.line()
 
-    rprint(Panel(history_text, title=f"History with {npc.name}", border_style="dim white"))
-
-    # Raw Interaction Log Dump for Debugging
-    console.line(1)
-    console.rule("Raw Interaction Log (Debug)", style="bold yellow")
-    raw_history = npc.interaction_history.get_llm_history()
-    if not raw_history:
-        rprint(Text("(Interaction log is empty)", style="dim"))
-    else:
-        for i, entry in enumerate(raw_history):
-            rprint(f"[yellow]Log Entry {i}:[/yellow] {entry}")
-    console.line(1)
+def display_available_commands():
+    """Displays all available commands to the user."""
+    console.line()
+    rprint("[bold cyan]Commands:[/bold cyan]")
+    rprint("  [bright_white]/say[/bright_white] <message> - Talk to the character")
+    rprint("  [bright_white]/give[/bright_white] <item> - Offer an item")
+    rprint("  [bright_white]/trade[/bright_white] <proposal> - Propose a trade")
+    rprint("  [bright_white]/accept[/bright_white] - Accept counter-proposal")
+    rprint("  [bright_white]/decline[/bright_white] - Decline counter-proposal")
+    rprint("  [bright_white]/quit[/bright_white] - End conversation")
+    rprint("  [bright_white]/help[/bright_white] - Show commands")
+    console.line()
 
 def start_game(scenario_name_to_load: str):
     """Initializes and runs the main game loop for the specified scenario."""
