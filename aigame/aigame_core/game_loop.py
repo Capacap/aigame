@@ -205,7 +205,7 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str, curre
             rprint(f"🔄 [dim]You propose trading {player_item_obj.name} for {npc_item_obj.name}[/dim]")
 
         elif command_verb == "accept":
-            # Accept an NPC's counter-proposal
+            # Accept an NPC's counter-proposal with optional dialogue
             if not npc.active_trade_proposal:
                 rprint(Text("There is no active trade proposal to accept.", style="bold red"))
                 continue
@@ -239,7 +239,14 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str, curre
                     npc.interaction_history.add_entry(role="system", content=trade_completion_message)
                     
                     # Add the player's acceptance message to dialogue history
-                    npc.add_dialogue_turn(speaker=player1.name, message=f"*I accept your counter-proposal and trade my {player_item_name} for your {npc_item_name}.*")
+                    if command_args:
+                        # Player provided custom dialogue
+                        acceptance_message = f"{command_args} *I accept your counter-proposal and trade my {player_item_name} for your {npc_item_name}.*"
+                    else:
+                        # Default acceptance message
+                        acceptance_message = f"*I accept your counter-proposal and trade my {player_item_name} for your {npc_item_name}.*"
+                    
+                    npc.add_dialogue_turn(speaker=player1.name, message=acceptance_message)
                     
                     # Get AI response to the completed trade
                     ai_response = npc.get_ai_response(player_object=player1, current_location=current_location)
@@ -265,7 +272,7 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str, curre
                 npc.active_trade_proposal = None
 
         elif command_verb == "decline":
-            # Decline an NPC's counter-proposal
+            # Decline an NPC's counter-proposal with optional dialogue
             if not npc.active_trade_proposal:
                 rprint(Text("There is no active trade proposal to decline.", style="bold red"))
                 continue
@@ -285,7 +292,14 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str, curre
             npc.active_offer = None
             
             # Add the player's decline message to dialogue history
-            npc.add_dialogue_turn(speaker=player1.name, message=f"*I decline your counter-proposal to trade my {player_item_name} for your {npc_item_name}.*")
+            if command_args:
+                # Player provided custom dialogue
+                decline_message = f"{command_args} *I decline your counter-proposal to trade my {player_item_name} for your {npc_item_name}.*"
+            else:
+                # Default decline message
+                decline_message = f"*I decline your counter-proposal to trade my {player_item_name} for your {npc_item_name}.*"
+            
+            npc.add_dialogue_turn(speaker=player1.name, message=decline_message)
             
             # Get AI response to the declined counter-proposal
             ai_response = npc.get_ai_response(player_object=player1, current_location=current_location)
@@ -600,8 +614,8 @@ def display_available_commands():
     rprint("  [bright_white]/say[/bright_white] <message> - Talk to the character")
     rprint("  [bright_white]/give[/bright_white] <item> - Offer an item")
     rprint("  [bright_white]/trade[/bright_white] <proposal> - Propose a trade")
-    rprint("  [bright_white]/accept[/bright_white] - Accept counter-proposal")
-    rprint("  [bright_white]/decline[/bright_white] - Decline counter-proposal")
+    rprint("  [bright_white]/accept[/bright_white] [message] - Accept counter-proposal")
+    rprint("  [bright_white]/decline[/bright_white] [message] - Decline counter-proposal")
     rprint("  [bright_white]/quit[/bright_white] - End conversation")
     rprint("  [bright_white]/help[/bright_white] - Show commands")
     console.line()
