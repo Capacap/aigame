@@ -157,6 +157,32 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str, curre
         rprint(f"🔄 [dim]You propose trading {player_item_obj.name} for {npc_item_obj.name}[/dim]")
         return True
     
+    elif action_type == 'request_item':
+        item_name = parameters['item_name']
+        original_message = parameters.get('original_message', '')
+        
+        # Get the exact Item object from NPC's inventory
+        item_to_request_obj = next((item for item in npc.items if item.name.lower() == item_name.lower()), None)
+        
+        if not item_to_request_obj:
+            rprint(Text(f"Error: Could not find the item object for '{item_name}'.", style="bold red"))
+            return False
+        
+        # Set up the request on the NPC
+        npc.active_request = {
+            "item_name": item_to_request_obj.name,
+            "item_object": item_to_request_obj,
+            "requested_by_name": player1.name,
+            "requested_by_object": player1
+        }
+        
+        # Add contextual message to dialogue history
+        request_message = f"*{original_message}*" if original_message else f"*I would like to have your {item_to_request_obj.name}.*"
+        npc.add_dialogue_turn(speaker=player1.name, message=request_message)
+        
+        rprint(f"🙏 [dim]You ask for the {item_to_request_obj.name}[/dim]")
+        return True
+    
     elif action_type == 'accept_trade':
         custom_message = parameters.get('custom_message')
         
@@ -246,7 +272,7 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str, curre
         return "TRADE_DECLINED"
     
     else:
-        rprint(Text(f"I don't understand what you want to do. Try being more specific.", style="bold yellow"))
+        rprint(Text(f"Something went wrong processing your input. Please try again.", style="bold yellow"))
         rprint(Text("You can talk to the character, offer items, propose trades, or type 'help' for guidance.", style="dim white"))
         return False
 
@@ -292,6 +318,16 @@ def handle_npc_response(npc: Character, player_object: Player, current_location:
             rprint(f"✅ [dim]{npc.name} accepts your {item_name}[/dim]")
         elif 'offer_declined' in state_changes:
             rprint(f"❌ [dim]{npc.name} declines your offer[/dim]")
+        
+        # Show request handling (now handled automatically before dialogue)
+        if 'request_handled' in state_changes:
+            # Request was already handled and feedback was provided
+            pass
+        
+        # Show trade handling (handled automatically before dialogue)
+        if 'trade_handled' in state_changes:
+            # Trade was already handled and feedback was provided
+            pass
         
         # Show trade completion
         if 'trade_completed' in state_changes:
@@ -491,6 +527,7 @@ def display_available_commands():
     rprint("[bold cyan]You can interact naturally! Here are some examples:[/bold cyan]")
     rprint("  [bright_white]Talk:[/bright_white] 'Hello there!' or 'How are you today?'")
     rprint("  [bright_white]Give items:[/bright_white] 'Here, take my sword' or 'I offer you this potion'")
+    rprint("  [bright_white]Request items:[/bright_white] 'Can I have your map?' or 'I really need that key'")
     rprint("  [bright_white]Propose trades:[/bright_white] 'I'll trade my coins for your key' or 'Want to swap items?'")
     rprint("  [bright_white]Accept trades:[/bright_white] 'That sounds good, I accept' or 'Deal!'")
     rprint("  [bright_white]Decline trades:[/bright_white] 'No thanks' or 'I decline your offer'")

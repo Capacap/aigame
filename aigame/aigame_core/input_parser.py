@@ -79,17 +79,15 @@ class InputParser:
             return self._extract_give_parameters(player_input, player, npc, classification)
         elif action_type == 'trade_proposal':
             return self._extract_trade_parameters(player_input, player, npc, classification)
+        elif action_type == 'request_item':
+            return self._extract_request_parameters(player_input, player, npc, classification)
         elif action_type == 'accept_trade':
             return self._extract_accept_parameters(player_input, npc, classification)
         elif action_type == 'decline_trade':
             return self._extract_decline_parameters(player_input, npc, classification)
         else:
-            return {
-                'action_type': 'unknown',
-                'parameters': {},
-                'success': False,
-                'error_message': f'Unknown action type: {action_type}'
-            }
+            # Default unknown inputs to dialogue for more natural conversation
+            return self._extract_dialogue_parameters(player_input, classification)
     
     def _parse_slash_command(self, player_input: str, player: Player, npc: Character) -> Dict[str, Any]:
         """
@@ -152,6 +150,17 @@ class InputParser:
             # Use the existing trade parsing logic
             return self._extract_trade_parameters(command_args, player, npc, {})
         
+        elif command_verb == "request":
+            if not command_args:
+                return {
+                    'action_type': 'request_item',
+                    'parameters': {},
+                    'success': False,
+                    'error_message': 'Item request cannot be empty'
+                }
+            # Use the existing request parsing logic
+            return self._extract_request_parameters(command_args, player, npc, {})
+        
         elif command_verb == "accept":
             return {
                 'action_type': 'accept_trade',
@@ -169,11 +178,12 @@ class InputParser:
             }
         
         else:
+            # Default unknown slash commands to dialogue for more natural conversation
             return {
-                'action_type': 'unknown',
-                'parameters': {},
-                'success': False,
-                'error_message': f"Unknown command: /{command_verb}"
+                'action_type': 'dialogue',
+                'parameters': {'message': player_input},
+                'success': True,
+                'error_message': ''
             }
     
     def _classify_input(
@@ -199,6 +209,7 @@ class InputParser:
             "- 'dialogue': Player wants to talk/speak to the NPC (greetings, questions, statements, etc.)\n"
             "- 'give_item': Player wants to offer/give an item to the NPC\n"
             "- 'trade_proposal': Player wants to propose trading items (offering one item for another)\n"
+            "- 'request_item': Player wants to ask for a specific item without offering anything in return\n"
             "- 'accept_trade': Player wants to accept a trade or counter-proposal\n"
             "- 'decline_trade': Player wants to decline a trade or counter-proposal\n"
             "- 'unknown': Input doesn't clearly match any category\n\n"
@@ -206,11 +217,14 @@ class InputParser:
             "- Words like 'say', 'tell', 'ask', 'hello' suggest dialogue\n"
             "- Words like 'give', 'offer', 'take this', 'here' suggest give_item\n"
             "- Words like 'trade', 'exchange', 'swap', 'for your' suggest trade_proposal\n"
+            "- Words like 'can I have', 'please give me', 'I need', 'may I borrow' suggest request_item\n"
             "- Words like 'accept', 'yes', 'deal', 'agreed', 'okay', 'sure' suggest accept_trade\n"
             "- Words like 'decline', 'no', 'refuse', 'reject' suggest decline_trade\n\n"
             "Be flexible - players might phrase things naturally. For example:\n"
             "- 'Here, take my sword' = give_item\n"
             "- 'I'll trade my coins for your key' = trade_proposal\n"
+            "- 'Can I have your map?' = request_item\n"
+            "- 'I really need that potion' = request_item\n"
             "- 'Hello there, how are you?' = dialogue\n"
             "- 'Yes please' = accept_trade (if it sounds like agreement)\n"
             "- 'That sounds good, I accept' = accept_trade\n"
@@ -440,6 +454,82 @@ class InputParser:
                 'parameters': {},
                 'success': False,
                 'error_message': f'Error parsing trade proposal: {e}'
+            }
+    
+    def _extract_request_parameters(
+        self, 
+        player_input: str, 
+        player: Player, 
+        npc: Character, 
+        classification: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Extract parameters for request_item action."""
+        system_prompt = (
+            "You are extracting the item name from a player's request message. "
+            "The player wants to ask for a specific item from the NPC without offering anything in return. "
+            "Look for the specific item they mention. "
+            "Match the mentioned item to the NPC's actual inventory, being flexible with naming "
+            "(e.g., 'sword' might match 'Iron Sword', 'coins' might match 'Bag of Coins'). "
+            "Respond ONLY with a JSON object containing:\n"
+            "- 'item_name': exact name from NPC's inventory, or empty string if not found\n"
+            "- 'confidence': number from 0.0 to 1.0\n"
+            "- 'reasoning': brief explanation"
+        )
+        
+        npc_items = [item.name for item in npc.items]
+        user_prompt = (
+            f"NPC's inventory: {npc_items}\n"
+            f"Player's request message: \"{player_input}\"\n\n"
+            "What item is the player asking for from the NPC?"
+        )
+        
+        try:
+            response = litellm.completion(
+                model="openai/gpt-4.1-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.1,
+                response_format={"type": "json_object"}
+            )
+            
+            parsed = json.loads(response.choices[0].message.content)
+            item_name = parsed.get('item_name', '')
+            
+            if not item_name:
+                return {
+                    'action_type': 'request_item',
+                    'parameters': {},
+                    'success': False,
+                    'error_message': 'Could not identify which item you want to ask for'
+                }
+            
+            # Verify NPC has the item
+            if not npc.has_item(item_name):
+                return {
+                    'action_type': 'request_item',
+                    'parameters': {},
+                    'success': False,
+                    'error_message': f"The NPC doesn't have '{item_name}' to give"
+                }
+            
+            return {
+                'action_type': 'request_item',
+                'parameters': {
+                    'item_name': item_name,
+                    'original_message': player_input
+                },
+                'success': True,
+                'error_message': ''
+            }
+            
+        except Exception as e:
+            return {
+                'action_type': 'request_item',
+                'parameters': {},
+                'success': False,
+                'error_message': f'Error parsing request command: {e}'
             }
     
     def _extract_accept_parameters(

@@ -109,6 +109,7 @@ class NPCActionParser:
         player_items = [item.name for item in player.items]
         active_offer = context.get('active_offer')
         active_trade = context.get('active_trade_proposal')
+        active_request = context.get('active_request')
         
         system_prompt = (
             "You are an AI that extracts actions from NPC dialogue in a text adventure game. "
@@ -116,15 +117,19 @@ class NPCActionParser:
             "Focus on concrete actions that affect the game state, not just emotional expressions. "
             "Return a JSON object with 'actions' (list) and 'confidence' (0.0-1.0). "
             "Each action should have 'type' and 'parameters'. "
-            "Action types: give_item, accept_offer, decline_offer, trade_accept, trade_decline, trade_counter, dialogue_only. "
+            "Action types: give_item, accept_offer, decline_offer, trade_accept, trade_decline, trade_counter, accept_request, decline_request, dialogue_only. "
             "For give_item: include 'item_name'. "
             "For trade_counter: include 'player_item' and 'npc_item'. "
+            "For accept_request: include 'item_name' (item being given to fulfill request). "
+            "For decline_request: no additional parameters needed. "
             "If no concrete actions are detected, return dialogue_only. "
             "Examples: "
             "'Here, take this ring' -> give_item with item_name='ring' "
             "'I accept your offer' -> accept_offer "
             "'I decline' -> decline_offer "
             "'How about my sword for your shield?' -> trade_counter "
+            "'Sure, you can have it' -> accept_request "
+            "'No, I need that myself' -> decline_request "
             "'Hello there' -> dialogue_only"
         )
         
@@ -144,6 +149,12 @@ class NPCActionParser:
             context_desc += f"Active trade proposal: Player's '{player_item}' for NPC's '{npc_item}'\n"
         else:
             context_desc += "Active trade proposal: None\n"
+        
+        if active_request:
+            requested_item = active_request.get('item_name', 'unknown item')
+            context_desc += f"Active request: Player asked for '{requested_item}' from NPC\n"
+        else:
+            context_desc += "Active request: None\n"
         
         user_prompt = (
             f"Game Context:\n{context_desc}\n"
@@ -254,6 +265,17 @@ class NPCActionParser:
                 return {'valid': False, 'reason': f"Player doesn't have '{player_item}' for counter-trade"}
             if not npc.has_item(npc_item):
                 return {'valid': False, 'reason': f"NPC doesn't have '{npc_item}' for counter-trade"}
+            return {'valid': True, 'reason': ''}
+        
+        elif action_type == 'accept_request':
+            item_name = parameters.get('item_name', '')
+            if not item_name:
+                return {'valid': False, 'reason': 'accept_request action missing item_name'}
+            if not npc.has_item(item_name):
+                return {'valid': False, 'reason': f"NPC doesn't have '{item_name}' to give"}
+            return {'valid': True, 'reason': ''}
+        
+        elif action_type == 'decline_request':
             return {'valid': True, 'reason': ''}
         
         elif action_type == 'dialogue_only':
@@ -398,6 +420,31 @@ class NPCActionParser:
                     }
                 }
             return {'success': False, 'error': 'Failed to create counter-proposal'}
+        
+        elif action_type == 'accept_request':
+            item_name = parameters.get('item_name', '')
+            if not item_name:
+                return {'success': False, 'error': 'accept_request action missing item_name'}
+            
+            # Find the actual item object
+            item_obj = next((item for item in npc.items if item.name.lower() == item_name.lower()), None)
+            if item_obj and npc.remove_item(item_obj):
+                player.add_item(item_obj)
+                # Clear the active request
+                npc.active_request = None
+                return {
+                    'success': True,
+                    'state_changes': {'request_accepted': item_name}
+                }
+            return {'success': False, 'error': f"Failed to transfer '{item_name}' for request"}
+        
+        elif action_type == 'decline_request':
+            # Clear the active request
+            npc.active_request = None
+            return {
+                'success': True,
+                'state_changes': {'request_declined': True}
+            }
         
         elif action_type == 'dialogue_only':
             return {'success': True, 'state_changes': {}}

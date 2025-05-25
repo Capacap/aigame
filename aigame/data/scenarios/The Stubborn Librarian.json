@@ -1,0 +1,12 @@
+{
+    "name": "The Stubborn Librarian",
+    "description": "Dr. Thornfield desperately needs access to the Forbidden Grimoire to complete his research, but Keeper Dusttome guards the restricted texts with iron-clad rules. The stern librarian seems impossible to convince through normal academic channels. However, she harbors a secret passion for romantic poetry that she's too embarrassed to share. Can Dr. Thornfield discover her hidden weakness and appeal to her artistic soul to gain the access he needs?",
+    "location_name": "Restricted Library",
+    "player_character_name": "Dr. Thornfield",
+    "npc_character_name": "Keeper Dusttome",
+    "victory_condition": {
+        "type": "PLAYER_OBTAINS_ITEM",
+        "item_name": "Forbidden Grimoire",
+        "from_npc": true
+    }
+} 

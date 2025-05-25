@@ -43,6 +43,7 @@ class Character:
         self.interaction_history: InteractionHistory = InteractionHistory()
         self.active_offer: dict | None = None # To store details of an item offered to this character
         self.active_trade_proposal: dict | None = None # To store details of a trade proposal made to this character
+        self.active_request: dict | None = None # To store details of an item request made to this character
 
     def __str__(self) -> str:
         # This format is already quite panel-friendly
@@ -125,6 +126,7 @@ class Character:
             f"Only provide {self.name}'s next line of dialogue in response to the user. "
             f"The user may perform actions (like giving you items, complimenting you, or insulting you). These will be described in their message (e.g., \"I hand the item_name over to you.\", \"You seem very wise.\", or \"Your wares are terrible!\"). React naturally to such actions, both in your dialogue and by considering changes to your disposition."
             f"When the player uses a command like '/give ItemName', they are OFFERING you the item. It is not yet in your possession. Their message might look like '*I offer you the ItemName. Do you accept?*'. To accept the offered item, you MUST use the 'accept_item_offer' tool. If you do not want the item, simply state that in your dialogue."
+            f"When the player asks for one of your items (their message might look like '*I would like to have your ItemName.*'), you can choose to give it to them or refuse. If you decide to give it, use the 'give_item_to_user' tool. If you refuse, simply explain why in your dialogue."
             f"Trade proposals are handled automatically before you speak - you don't need to worry about them in your dialogue. Just respond naturally to the outcome. "
             f"If a trade was just completed, acknowledge it naturally in your response. "
             f"Pay close attention to any 'SYSTEM_ALERT' or 'SYSTEM_OBSERVATION' messages in the history. These provide direct prompts or context for you to consider significant changes or facts."
@@ -321,6 +323,116 @@ class Character:
             self.active_trade_proposal = None
             return f"[{self.name} seems distracted and doesn't respond to the trade proposal.]"
 
+    def handle_standing_request(self, player_object: 'Player', current_location: 'Location') -> str | None:
+        """
+        Handles any standing item request before generating dialogue.
+        Uses AI to decide whether to accept or decline the request.
+        Returns a message about the request decision, or None if no request exists.
+        """
+        if not self.active_request:
+            return None
+            
+        from .player import Player
+        
+        # Get request details
+        requested_item_name = self.active_request.get("item_name", "")
+        requested_item_object = self.active_request.get("item_object")
+        requested_by_name = self.active_request.get("requested_by_name", "Player")
+        
+        # Prepare context for AI decision
+        items_str = ", ".join(item.name for item in self.items) if self.items else "nothing"
+        location_info = f"You are currently in: {current_location.name}. {current_location.description}"
+        
+        system_message_content = (
+            f"You are {self.name}.\n"
+            f"Your personality: {self.personality}\n"
+            f"Your current goal: {self.goal}\n"
+            f"Your current disposition/state of mind: {self.disposition}\n"
+            f"You are currently carrying: {items_str}.\n"
+            f"{location_info}\n\n"
+        )
+        
+        system_message_content += (
+            f"ITEM REQUEST: {requested_by_name} has asked for your '{requested_item_name}'.\n"
+            f"You MUST decide on this request. You have two options:\n"
+            f"1. ACCEPT - Give the item to the player\n"
+            f"2. DECLINE - Refuse to give the item\n\n"
+            f"Consider your personality, goals, disposition, and relationship with the player.\n"
+            f"Think about:\n"
+            f"- How valuable is this item to you?\n"
+            f"- Do you trust or like the player?\n"
+            f"- Does giving this item align with your goals?\n"
+            f"- What would someone with your personality do?\n\n"
+            f"Respond with a JSON object containing:\n"
+            f"- 'decision': 'ACCEPT' or 'DECLINE'\n"
+            f"- 'spoken_response': Your dialogue explaining the decision\n"
+            f"- 'reasoning': Brief internal reasoning for your decision\n\n"
+            f"Be true to your character. If you're generous, you might give items freely. "
+            f"If you're cautious or selfish, you might refuse. Consider the context and your relationship with the player."
+        )
+        
+        # Get conversation history for context
+        messages = [{"role": "system", "content": system_message_content}]
+        messages.extend(self.interaction_history.get_llm_history())
+        
+        try:
+            response = litellm.completion(
+                model="openai/gpt-4.1-mini",
+                messages=messages,
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
+            
+            raw_response = response.choices[0].message.content
+            if not raw_response:
+                # Fallback to decline if no response
+                self.active_request = None
+                return f"[{self.name} seems confused by the request and doesn't respond clearly.]"
+            
+            try:
+                decision_data = json.loads(raw_response)
+                decision = decision_data.get("decision", "DECLINE").upper()
+                spoken_response = decision_data.get("spoken_response", "")
+                reasoning = decision_data.get("reasoning", "No reasoning provided")
+                
+                rprint(Text.assemble(Text("REQUEST DECISION: ", style="dim yellow"), 
+                                   Text(f"{self.name} decided to {decision}. Reasoning: {reasoning}", style="yellow")))
+                
+                if decision == "ACCEPT":
+                    # Execute the item transfer
+                    if requested_item_object and self.has_item(requested_item_object):
+                        if self.remove_item(requested_item_object):
+                            player_object.add_item(requested_item_object)
+                            rprint(Text.assemble(Text("REQUEST GRANTED: ", style="dim bright_green"), 
+                                               Text(f"{self.name} gives '{requested_item_name}' to {requested_by_name}.", style="bright_green")))
+                            self.active_request = None
+                            
+                            # Add system message to inform AI about the completed transfer
+                            request_completion_message = f"SYSTEM_ALERT: You just gave your '{requested_item_name}' to {requested_by_name} as they requested. The item transfer is complete. Respond naturally to this generous act."
+                            self.interaction_history.add_entry(role="system", content=request_completion_message)
+                            
+                            return spoken_response
+                        else:
+                            self.active_request = None
+                            return f"[Request failed due to item transfer error. {spoken_response}]"
+                    else:
+                        self.active_request = None
+                        return f"[Request failed - {self.name} no longer has the '{requested_item_name}'. {spoken_response}]"
+                
+                else:  # DECLINE or any other value
+                    self.active_request = None
+                    return spoken_response
+                    
+            except json.JSONDecodeError:
+                # Fallback to decline if JSON parsing fails
+                self.active_request = None
+                return f"[{self.name} seems confused by the request and declines.]"
+                
+        except Exception as e:
+            rprint(Text(f"Error handling request for {self.name}: {e}", style="bold red"))
+            self.active_request = None
+            return f"[{self.name} seems distracted and doesn't respond to the request.]"
+
     def get_ai_response(self, player_object: 'Player', current_location: Location) -> str | None:
         from .player import Player # Corrected import: Import Player here, inside the method
         current_messages = self._prepare_llm_messages(current_location)
@@ -485,7 +597,29 @@ class Character:
         """
         from .npc_action_parser import NPCActionParser
         
-        # Get the basic AI response without tools
+        # Handle standing requests first (like trade offers)
+        request_response = self.handle_standing_request(player_object, current_location)
+        if request_response:
+            # Request was handled, return the response
+            return request_response, {
+                'executed_actions': [],
+                'state_changes': {'request_handled': True},
+                'errors': [],
+                'classification': {'action_types': ['request_handled'], 'confidence': 1.0}
+            }
+        
+        # Handle standing trade offers second
+        trade_response = self.handle_standing_trade_offer(player_object, current_location)
+        if trade_response:
+            # Trade was handled, return the response
+            return trade_response, {
+                'executed_actions': [],
+                'state_changes': {'trade_handled': True},
+                'errors': [],
+                'classification': {'action_types': ['trade_handled'], 'confidence': 1.0}
+            }
+        
+        # No standing requests or trades, generate normal dialogue
         messages = self._prepare_llm_messages(current_location)
         
         try:
@@ -505,7 +639,8 @@ class Character:
             parser = NPCActionParser(debug_mode=False)
             context = {
                 'active_offer': getattr(self, 'active_offer', None),
-                'active_trade_proposal': getattr(self, 'active_trade_proposal', None)
+                'active_trade_proposal': getattr(self, 'active_trade_proposal', None),
+                'active_request': getattr(self, 'active_request', None)
             }
             
             parse_result = parser.parse_npc_response(ai_response, self, player_object, context)
