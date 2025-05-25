@@ -1,6 +1,5 @@
 from __future__ import annotations
 import json
-# import re # No longer needed for the new command parsing logic
 
 # Rich imports
 from rich import print as rprint
@@ -11,18 +10,16 @@ from rich.console import Console
 # Core game class imports
 from .player import Player
 from .character import Character, load_character_from_file
-# Item is not directly used in this module's functions but load_item_from_file might be if player items were loaded differently
-# For now, character loading handles items. If player needs items loaded directly, uncomment Item and its loader.
-# from .item import Item, load_item_from_file 
 from .location import Location, load_location_from_file
 from .scenario import Scenario, load_scenario_from_file
 from .game_master import GameMaster
+from .input_parser import InputParser
 
 console = Console()
 
 # Game constants
 CHARACTERS_BASE_PATH = "aigame/data/characters"
-ITEMS_BASE_PATH = "aigame/data/items" # Kept for potential direct item loading in future
+ITEMS_BASE_PATH = "aigame/data/items"
 LOCATIONS_BASE_PATH = "aigame/data/locations"
 SCENARIOS_BASE_PATH = "aigame/data/scenarios"
 
@@ -73,7 +70,7 @@ def display_initial_state(player: Player, npc: Character, location: Location):
     rprint(f"🤝 [bold green]{npc.name}[/bold green] | Items: [dim]{', '.join(item.name for item in npc.items) if npc.items else 'None'}[/dim]")
     console.line()
     
-    rprint(f"[dim]Type '/help' for commands[/dim]")
+    rprint(f"[dim]Type naturally - just say what you want to do![/dim]")
     console.line()
 
 # Regex to capture optional dialogue and an optional /give command
@@ -81,321 +78,260 @@ def display_initial_state(player: Player, npc: Character, location: Location):
 # COMMAND_REGEX = re.compile(r"^(.*?)(?:\s*(\/give\s+(.+)))?$", re.IGNORECASE) # Old regex, no longer needed
 
 def handle_player_action(player1: Player, npc: Character, player_msg: str, current_location: Location) -> bool:
-    """Handles the player's action, which must be a sequence of commands. Returns True if NPC should respond."""
-    original_player_msg_stripped = player_msg.strip()
-
-    if not original_player_msg_stripped:
-        rprint(Text("Please enter a command or a sequence of commands (e.g., /say Hello, /give ItemName).", style="bold yellow"))
+    """
+    AI-powered version of handle_player_action that uses natural language parsing.
+    Returns True if NPC should respond, or special strings for quit/help.
+    """
+    parser = InputParser()
+    
+    # Parse the player input using AI
+    parsed_result = parser.parse_player_input(player_msg, player1, npc, current_location)
+    
+    if not parsed_result['success']:
+        rprint(Text(parsed_result['error_message'], style="bold red"))
         console.line(1)
         return False
-
-    # Handle backward compatibility for non-slash quit and help
-    if original_player_msg_stripped.lower() == "quit":
+    
+    action_type = parsed_result['action_type']
+    parameters = parsed_result['parameters']
+    
+    # Handle each action type
+    if action_type == 'dialogue':
+        message = parameters['message']
+        npc.add_dialogue_turn(speaker=player1.name, message=message)
+        return True
+    
+    elif action_type == 'give_item':
+        item_name = parameters['item_name']
+        original_message = parameters.get('original_message', '')
+        
+        # Get the exact Item object
+        item_to_give_obj = next((item for item in player1.items if item.name.lower() == item_name.lower()), None)
+        
+        if not item_to_give_obj:
+            rprint(Text(f"Error: Could not find the item object for '{item_name}'.", style="bold red"))
+            return False
+        
+        # Set up the offer on the NPC
+        npc.active_offer = {
+            "item_name": item_to_give_obj.name,
+            "item_object": item_to_give_obj,
+            "offered_by_name": player1.name,
+            "offered_by_object": player1
+        }
+        
+        # Add contextual message to dialogue history
+        offer_message = f"*{original_message}*" if original_message else f"*I offer you the {item_to_give_obj.name}.*"
+        npc.add_dialogue_turn(speaker=player1.name, message=offer_message)
+        
+        rprint(f"💝 [dim]You offer the {item_to_give_obj.name} to {npc.name}[/dim]")
+        return True
+    
+    elif action_type == 'trade_proposal':
+        player_item_name = parameters['player_item']
+        npc_item_name = parameters['npc_item']
+        original_message = parameters.get('original_message', '')
+        
+        # Get the actual Item objects
+        player_item_obj = next((item for item in player1.items if item.name.lower() == player_item_name.lower()), None)
+        npc_item_obj = next((item for item in npc.items if item.name.lower() == npc_item_name.lower()), None)
+        
+        if not player_item_obj or not npc_item_obj:
+            rprint(Text("Error: Could not find the item objects for the trade.", style="bold red"))
+            return False
+        
+        # Set up the trade proposal on the NPC
+        npc.active_trade_proposal = {
+            "player_item_name": player_item_obj.name,
+            "npc_item_name": npc_item_obj.name,
+            "player_item_object": player_item_obj,
+            "npc_item_object": npc_item_obj,
+            "offered_by_name": player1.name,
+            "offered_by_object": player1
+        }
+        
+        # Add contextual message to dialogue history
+        trade_message = f"*{original_message}*" if original_message else f"*I propose trading my {player_item_obj.name} for your {npc_item_obj.name}.*"
+        npc.add_dialogue_turn(speaker=player1.name, message=trade_message)
+        
+        rprint(f"🔄 [dim]You propose trading {player_item_obj.name} for {npc_item_obj.name}[/dim]")
+        return True
+    
+    elif action_type == 'accept_trade':
+        custom_message = parameters.get('custom_message')
+        
+        # Execute the trade from the counter-proposal
+        player_item_name = npc.active_trade_proposal.get("player_item_name", "")
+        npc_item_name = npc.active_trade_proposal.get("npc_item_name", "")
+        player_item_object = npc.active_trade_proposal.get("player_item_object")
+        npc_item_object = npc.active_trade_proposal.get("npc_item_object")
+        
+        if (player_item_object and npc_item_object and 
+            player1.has_item(player_item_object) and npc.has_item(npc_item_object)):
+            
+            if player1.remove_item(player_item_object) and npc.remove_item(npc_item_object):
+                player1.add_item(npc_item_object)  # Player gets NPC's item
+                npc.add_item(player_item_object)   # NPC gets player's item
+                rprint(f"✅ [bright_green]Trade completed: {player_item_name} ↔ {npc_item_name}[/bright_green]")
+                npc.active_trade_proposal = None
+                
+                # Clear any standing offers to prevent AI confusion
+                npc.active_offer = None
+                
+                # Add system message to inform AI about the completed trade
+                trade_completion_message = f"SYSTEM_ALERT: Trade completed successfully. You just traded your '{npc_item_name}' for the player's '{player_item_name}'. The exchange is done. Respond naturally to this completed transaction."
+                npc.interaction_history.add_entry(role="system", content=trade_completion_message)
+                
+                # Add the player's acceptance message to dialogue history
+                if custom_message:
+                    acceptance_message = f"{custom_message} *I accept your counter-proposal and trade my {player_item_name} for your {npc_item_name}.*"
+                else:
+                    acceptance_message = f"*I accept your counter-proposal and trade my {player_item_name} for your {npc_item_name}.*"
+                
+                npc.add_dialogue_turn(speaker=player1.name, message=acceptance_message)
+                
+                # Get AI response to the completed trade
+                ai_response = npc.get_ai_response(player_object=player1, current_location=current_location)
+                if ai_response:
+                    console.line(1)
+                    npc_turn_text = Text()
+                    npc_turn_text.append(f"{npc.name}: ", style="bold green")
+                    npc_turn_text.append(ai_response)
+                    rprint(npc_turn_text)
+                
+                return "TRADE_ACCEPTED"
+            else:
+                rprint(Text("Trade failed due to item transfer error.", style="bold red"))
+                npc.active_trade_proposal = None
+        else:
+            missing_items = []
+            if not player1.has_item(player_item_object):
+                missing_items.append(f"You no longer have '{player_item_name}'")
+            if not npc.has_item(npc_item_object):
+                missing_items.append(f"{npc.name} no longer has '{npc_item_name}'")
+            rprint(Text(f"Cannot complete trade - {', '.join(missing_items)}.", style="bold red"))
+            npc.active_trade_proposal = None
+        
+        return False
+    
+    elif action_type == 'decline_trade':
+        custom_message = parameters.get('custom_message')
+        
+        # Clear the counter-proposal and inform the NPC
+        player_item_name = npc.active_trade_proposal.get("player_item_name", "")
+        npc_item_name = npc.active_trade_proposal.get("npc_item_name", "")
+        npc.active_trade_proposal = None
+        
+        # Clear any standing offers to prevent AI confusion
+        npc.active_offer = None
+        
+        # Add the player's decline message to dialogue history
+        if custom_message:
+            decline_message = f"{custom_message} *I decline your counter-proposal to trade my {player_item_name} for your {npc_item_name}.*"
+        else:
+            decline_message = f"*I decline your counter-proposal to trade my {player_item_name} for your {npc_item_name}.*"
+        
+        npc.add_dialogue_turn(speaker=player1.name, message=decline_message)
+        
+        # Get AI response to the declined counter-proposal
+        ai_response = npc.get_ai_response(player_object=player1, current_location=current_location)
+        if ai_response:
+            console.line(1)
+            npc_turn_text = Text()
+            npc_turn_text.append(f"{npc.name}: ", style="bold green")
+            npc_turn_text.append(ai_response)
+            rprint(npc_turn_text)
+        
+        rprint(f"❌ [dim]You decline the counter-proposal[/dim]")
+        return "TRADE_DECLINED"
+    
+    elif action_type == 'quit':
         return "QUIT"
     
-    if original_player_msg_stripped.lower() == "help":
+    elif action_type == 'help':
         display_available_commands()
         return "HELP_SHOWN"
-
-    if not original_player_msg_stripped.startswith("/"):
-        rprint(Text("All input must start with a command (e.g., /say Hello). Plain text is not processed.", style="bold red"))
-        console.line(1)
-        return False
-
-    command_segments = original_player_msg_stripped.split('/')[1:] # Split by '/' and remove the initial empty string
     
-    npc_should_respond = False
-    performed_action_descriptions: list[str] = [] # For AI context if no /say is used
-    say_command_executed_this_turn = False
-
-    if not command_segments:
-        rprint(Text("No valid commands found. Ensure commands start with '/'.", style="bold yellow"))
+    else:
+        rprint(Text(f"I don't understand what you want to do. Try being more specific.", style="bold yellow"))
+        rprint(Text("You can talk to the character, offer items, propose trades, or type 'help' for guidance.", style="dim white"))
         return False
-
-    for segment in command_segments:
-        segment_stripped = segment.strip()
-        if not segment_stripped:
-            continue # Skip empty segments that might result from multiple slashes e.g. /say hi //give item
-
-        parts = segment_stripped.split(maxsplit=1)
-        command_verb = parts[0].lower()
-        command_args = parts[1].strip() if len(parts) > 1 else ""
-
-        if command_verb == "say":
-            if not command_args:
-                rprint(Text("Usage: /say <message> (Message cannot be empty)", style="bold yellow"))
-                # If a previous command in the chain made NPC respond, don't override that to False
-                # continue # Allow processing other commands in the chain
-            else:
-                npc.add_dialogue_turn(speaker=player1.name, message=command_args)
-                npc_should_respond = True
-                say_command_executed_this_turn = True
-                performed_action_descriptions = [] # Explicit dialogue provides context, clear previous functional actions
-        
-        elif command_verb == "give":
-            item_name_to_give = command_args
-            if not item_name_to_give:
-                rprint(Text("Usage: /give <item_name> (Item name cannot be empty)", style="bold yellow"))
-                continue # Try next command in chain
-
-            if not player1.has_item(item_name_to_give):
-                rprint(Text(f"You don't have '{item_name_to_give}' in your inventory to give.", style="bold red"))
-                continue # Try next command in chain
-            
-            # Attempt to get the exact Item object for case consistency and object reference
-            item_to_give_obj = next((item for item in player1.items if item.name.lower() == item_name_to_give.lower()), None)
-            
-            if not item_to_give_obj: # Should be rare if has_item passed, but good for robustness
-                rprint(Text(f"Error: Could not find the precise item object for '{item_name_to_give}' after confirming possession.", style="bold red"))
-                continue
-
-            # NEW Offer Logic:
-            # Set up the offer on the NPC. The NPC's AI must use the 'accept_item_offer' tool to complete the transfer.
-            npc.active_offer = {
-                "item_name": item_to_give_obj.name,
-                "item_object": item_to_give_obj, # Pass the actual item object
-                "offered_by_name": player1.name, # Store who made the offer
-                "offered_by_object": player1 # Store the player object for later verification
-            }
-            npc_should_respond = True # NPC should react to being offered an item
-            performed_action_descriptions.append(f"*I hold out the {item_to_give_obj.name} for you. Do you accept?*")
-            rprint(f"💝 [dim]You offer the {item_to_give_obj.name} to {npc.name}[/dim]")
-
-        elif command_verb == "trade":
-            # Parse trade command using natural language processing
-            if not command_args:
-                rprint(Text("Usage: /trade <natural language trade proposal>", style="bold yellow"))
-                rprint(Text("Examples: '/trade I offer my bag of coins for your ancient amulet'", style="dim white"))
-                rprint(Text("          '/trade my translation cypher for your key'", style="dim white"))
-                continue
-            
-            # Use Game Master to parse the natural language trade proposal
-            temp_gm = GameMaster()
-            is_valid, player_item_name, npc_item_name, parse_reason = temp_gm.parse_trade_proposal(
-                player=player1,
-                npc=npc,
-                trade_message=command_args
-            )
-            
-            if not is_valid:
-                rprint(Text(f"Could not parse trade proposal: {parse_reason}", style="bold red"))
-                rprint(Text("Try being more specific about which items you want to trade.", style="dim yellow"))
-                rprint(Text("Example: 'I offer my bag of coins for your ancient amulet'", style="dim white"))
-                continue
-            
-            # Get the actual Item objects using the parsed names
-            player_item_obj = next((item for item in player1.items if item.name.lower() == player_item_name.lower()), None)
-            npc_item_obj = next((item for item in npc.items if item.name.lower() == npc_item_name.lower()), None)
-            
-            if not player_item_obj or not npc_item_obj:
-                rprint(Text(f"Error: Could not find the item objects for the parsed trade.", style="bold red"))
-                continue
-            
-            # Set up the trade proposal on the NPC
-            npc.active_trade_proposal = {
-                "player_item_name": player_item_obj.name,
-                "npc_item_name": npc_item_obj.name,
-                "player_item_object": player_item_obj,
-                "npc_item_object": npc_item_obj,
-                "offered_by_name": player1.name,
-                "offered_by_object": player1
-            }
-            npc_should_respond = True # NPC should react to the trade proposal
-            performed_action_descriptions.append(f"*{command_args}*")
-            rprint(f"🔄 [dim]You propose trading {player_item_obj.name} for {npc_item_obj.name}[/dim]")
-
-        elif command_verb == "accept":
-            # Accept an NPC's counter-proposal with optional dialogue
-            if not npc.active_trade_proposal:
-                rprint(Text("There is no active trade proposal to accept.", style="bold red"))
-                continue
-            
-            # Check if this is an NPC counter-proposal (offered_by_name should be the NPC's name)
-            offered_by_name = npc.active_trade_proposal.get("offered_by_name", "")
-            if offered_by_name != npc.name:
-                rprint(Text("There is no NPC counter-proposal to accept. Use /trade to make a new proposal.", style="bold red"))
-                continue
-            
-            # Execute the trade from the counter-proposal
-            player_item_name = npc.active_trade_proposal.get("player_item_name", "")
-            npc_item_name = npc.active_trade_proposal.get("npc_item_name", "")
-            player_item_object = npc.active_trade_proposal.get("player_item_object")
-            npc_item_object = npc.active_trade_proposal.get("npc_item_object")
-            
-            if (player_item_object and npc_item_object and 
-                player1.has_item(player_item_object) and npc.has_item(npc_item_object)):
-                
-                if player1.remove_item(player_item_object) and npc.remove_item(npc_item_object):
-                    player1.add_item(npc_item_object)  # Player gets NPC's item
-                    npc.add_item(player_item_object)   # NPC gets player's item
-                    rprint(f"✅ [bright_green]Trade completed: {player_item_name} ↔ {npc_item_name}[/bright_green]")
-                    npc.active_trade_proposal = None
-                    
-                    # Clear any standing offers to prevent AI confusion
-                    npc.active_offer = None
-                    
-                    # Add system message to inform AI about the completed trade
-                    trade_completion_message = f"SYSTEM_ALERT: Trade completed successfully. You just traded your '{npc_item_name}' for the player's '{player_item_name}'. The exchange is done. Respond naturally to this completed transaction."
-                    npc.interaction_history.add_entry(role="system", content=trade_completion_message)
-                    
-                    # Add the player's acceptance message to dialogue history
-                    if command_args:
-                        # Player provided custom dialogue
-                        acceptance_message = f"{command_args} *I accept your counter-proposal and trade my {player_item_name} for your {npc_item_name}.*"
-                    else:
-                        # Default acceptance message
-                        acceptance_message = f"*I accept your counter-proposal and trade my {player_item_name} for your {npc_item_name}.*"
-                    
-                    npc.add_dialogue_turn(speaker=player1.name, message=acceptance_message)
-                    
-                    # Get AI response to the completed trade
-                    ai_response = npc.get_ai_response(player_object=player1, current_location=current_location)
-                    if ai_response:
-                        console.line(1)
-                        npc_turn_text = Text()
-                        npc_turn_text.append(f"{npc.name}: ", style="bold green")
-                        npc_turn_text.append(ai_response)
-                        rprint(npc_turn_text)
-                    
-                    # Return special value to indicate response was handled
-                    return "TRADE_ACCEPTED"
-                else:
-                    rprint(Text("Trade failed due to item transfer error.", style="bold red"))
-                    npc.active_trade_proposal = None
-            else:
-                missing_items = []
-                if not player1.has_item(player_item_object):
-                    missing_items.append(f"You no longer have '{player_item_name}'")
-                if not npc.has_item(npc_item_object):
-                    missing_items.append(f"{npc.name} no longer has '{npc_item_name}'")
-                rprint(Text(f"Cannot complete trade - {', '.join(missing_items)}.", style="bold red"))
-                npc.active_trade_proposal = None
-
-        elif command_verb == "decline":
-            # Decline an NPC's counter-proposal with optional dialogue
-            if not npc.active_trade_proposal:
-                rprint(Text("There is no active trade proposal to decline.", style="bold red"))
-                continue
-            
-            # Check if this is an NPC counter-proposal (offered_by_name should be the NPC's name)
-            offered_by_name = npc.active_trade_proposal.get("offered_by_name", "")
-            if offered_by_name != npc.name:
-                rprint(Text("There is no NPC counter-proposal to decline. The current proposal is yours.", style="bold red"))
-                continue
-            
-            # Clear the counter-proposal and inform the NPC
-            player_item_name = npc.active_trade_proposal.get("player_item_name", "")
-            npc_item_name = npc.active_trade_proposal.get("npc_item_name", "")
-            npc.active_trade_proposal = None
-            
-            # Clear any standing offers to prevent AI confusion
-            npc.active_offer = None
-            
-            # Add the player's decline message to dialogue history
-            if command_args:
-                # Player provided custom dialogue
-                decline_message = f"{command_args} *I decline your counter-proposal to trade my {player_item_name} for your {npc_item_name}.*"
-            else:
-                # Default decline message
-                decline_message = f"*I decline your counter-proposal to trade my {player_item_name} for your {npc_item_name}.*"
-            
-            npc.add_dialogue_turn(speaker=player1.name, message=decline_message)
-            
-            # Get AI response to the declined counter-proposal
-            ai_response = npc.get_ai_response(player_object=player1, current_location=current_location)
-            if ai_response:
-                console.line(1)
-                npc_turn_text = Text()
-                npc_turn_text.append(f"{npc.name}: ", style="bold green")
-                npc_turn_text.append(ai_response)
-                rprint(npc_turn_text)
-            
-            rprint(f"❌ [dim]You decline the counter-proposal[/dim]")
-            # Return special value to indicate response was handled
-            return "TRADE_DECLINED"
-
-        elif command_verb == "quit":
-            # Handle /quit command - return a special value to indicate quit
-            return "QUIT"
-        
-        elif command_verb == "help":
-            # Handle /help command - display commands and continue
-            display_available_commands()
-            # Return special value to indicate help was shown but no NPC response needed
-            return "HELP_SHOWN"
-
-        else:
-            rprint(Text(f"Unknown command: '/{command_verb}'. Valid commands are /say, /give, /trade, /accept, /decline, /quit, and /help.", style="bold red"))
-            # If player types "/nonsense", we probably don't want NPC to respond unless a /say was also there.
-            # If npc_should_respond is already true from a /say, let it be. If not, this unknown command doesn't trigger it.
-
-    # If actions were performed (like /give) but no /say command provided context in this turn,
-    # add the functional descriptions for the AI.
-    if performed_action_descriptions and npc_should_respond:
-        functional_message_for_ai = " ".join(performed_action_descriptions)
-        # If a /say command was executed, this functional message should ideally be a new, distinct entry
-        # or appended to the existing user message. For now, let's add it as part of the same user turn if there was dialogue.
-        # The current add_dialogue_turn will just add it as if the player said it.
-        # This might look a bit odd in history if there was also a /say, e.g.:
-        # User: Hello there. *I offer the item to you.*
-        # This is acceptable for now to ensure AI gets the info.
-        npc.add_dialogue_turn(speaker=player1.name, message=functional_message_for_ai)
-        # This ensures the AI is aware of the actions. npc_should_respond is already true.
-
-    # If no command successfully set npc_should_respond to True (e.g. only unknown commands, or failed /give with no /say)
-    if not npc_should_respond and original_player_msg_stripped: # original_player_msg_stripped ensures we don't say this for initially empty input
-        # Check if any command was attempted. If command_segments was populated but npc_should_respond is false,
-        # it means all attempted commands failed or were unrecognized without a successful /say.
-        if command_segments and not any(s.strip().lower().startswith("say") for s in command_segments):
-             rprint(Text("No action taken. Ensure your commands are valid (e.g., /say, /give, /trade, /accept, /decline) and arguments are correct.", style="yellow"))
-        # If it started with /say but message was empty, that error is handled above. 
-        # This path is for when input was like "/unknown_cmd" or "/give non_existent_item" with no /say.
-
-    return npc_should_respond
 
 def handle_npc_response(npc: Character, player_object: Player, current_location: Location) -> str | None:
-    """Handles getting and printing the NPC's response. Returns the AI's spoken response string or None."""
+    """
+    Enhanced version of handle_npc_response that uses AI action parsing.
+    Returns the AI's spoken response string or None.
+    """
     
-    # First, handle any standing trade offer before generating dialogue
-    trade_response = npc.handle_standing_trade_offer(player_object, current_location)
+    # Use the new AI action parsing method
+    ai_response, action_results = npc.get_ai_response_with_actions(player_object, current_location)
     
-    if trade_response:
-        # If there was a trade decision, display it and use it as the complete response
-        console.line(1)
-        npc_trade_text = Text()
-        npc_trade_text.append(f"{npc.name}: ", style="bold green")
-        npc_trade_text.append(trade_response)
-        rprint(npc_trade_text)
-        
-        # Add the trade response to dialogue history
-        npc.add_dialogue_turn(speaker=npc.name, message=trade_response)
-        
-        # Return the trade response as the complete NPC response for this turn
-        return trade_response
-    
-    # Only get regular AI response if there was no trade decision
-    ai_response = npc.get_ai_response(player_object=player_object, current_location=current_location)
     console.line(1)
-
+    
     if ai_response:
+        # Display the NPC's response
         npc_turn_text = Text()
         npc_turn_text.append(f"{npc.name}: ", style="bold green")
         npc_turn_text.append(ai_response)
         rprint(npc_turn_text)
+        
+        # Show classification debug info after dialogue
+        classification = action_results.get('classification', {})
+        if classification:
+            action_types = classification.get('action_types', ['unknown'])
+            confidence = classification.get('confidence', 0.0)
+            if action_types[0] == 'dialogue_only':
+                rprint(Text(f"NPC response classified as: dialogue_only (confidence: {confidence:.2f})", style="dim magenta"))
+            else:
+                rprint(Text(f"NPC actions detected: {action_types} (confidence: {confidence:.2f})", style="dim magenta"))
+        
+        # Display any action results
+        state_changes = action_results.get('state_changes', {})
+        
+        # Show item transfers
+        if 'item_transferred' in state_changes:
+            item_name = state_changes['item_transferred']
+            rprint(f"🎁 [dim]{npc.name} gives you the {item_name}[/dim]")
+        
+        # Show offer acceptance/decline
+        if 'offer_accepted' in state_changes:
+            item_name = state_changes['offer_accepted']
+            rprint(f"✅ [dim]{npc.name} accepts your {item_name}[/dim]")
+        elif 'offer_declined' in state_changes:
+            rprint(f"❌ [dim]{npc.name} declines your offer[/dim]")
+        
+        # Show trade completion
+        if 'trade_completed' in state_changes:
+            player_received = state_changes.get('player_received', 'item')
+            npc_received = state_changes.get('npc_received', 'item')
+            rprint(f"✅ [bright_green]Trade completed: {npc_received} ↔ {player_received}[/bright_green]")
+        elif 'trade_declined' in state_changes:
+            rprint(f"❌ [dim]{npc.name} declines the trade[/dim]")
+        
+        # Show counter-proposals
+        if 'counter_proposal_made' in state_changes:
+            counter_player_item = state_changes.get('counter_player_item', 'item')
+            counter_npc_item = state_changes.get('counter_npc_item', 'item')
+            rprint(f"🔄 [bright_cyan]Counter-proposal: {npc.name} wants your {counter_player_item} for their {counter_npc_item}[/bright_cyan]")
+        
+        # Show any errors
+        errors = action_results.get('errors', [])
+        for error in errors:
+            rprint(Text(f"Action error: {error}", style="dim red"))
+        
         return ai_response
     else:
-        # This case might mean an error in get_ai_response or a deliberate empty response.
+        # This case might mean an error in get_ai_response_with_actions or a deliberate empty response.
         rprint(Text(f"[{npc.name} is silent or an error occurred determining a response.]", style="italic red"))
         return None
 
-def display_interaction_state(player1: Player, npc: Character, old_player_items: list[str], old_npc_items: list[str], old_disposition: str, old_direction: str = ""):
-    """Displays the state of player and NPC items, disposition, and direction after an interaction."""
+def display_interaction_state(player1: Player, npc: Character, old_player_items: list[str], old_npc_items: list[str], old_disposition: str):
+    """Displays the state of player and NPC items and disposition after an interaction."""
     
     # Check for important changes that need highlighting
     player_items_changed = old_player_items != [item.name for item in player1.items]
     npc_items_changed = old_npc_items != [item.name for item in npc.items]
     disposition_changed = old_disposition != npc.disposition
-    direction_changed = old_direction != npc.direction
     
     # Show active counter-proposal prominently if it exists
     if npc.active_trade_proposal:
@@ -405,7 +341,7 @@ def display_interaction_state(player1: Player, npc: Character, old_player_items:
             npc_item_name = npc.active_trade_proposal.get("npc_item_name", "")
             console.line()
             rprint(f"🔄 [bold bright_cyan]COUNTER-PROPOSAL: {npc.name} wants your {player_item_name} for their {npc_item_name}[/bold bright_cyan]")
-            rprint(f"   [dim cyan]Use /accept or /decline to respond[/dim cyan]")
+            rprint(f"   [dim cyan]You can accept or decline this offer[/dim cyan]")
     
     # Only show changes if something actually changed
     changes_to_show = []
@@ -420,9 +356,6 @@ def display_interaction_state(player1: Player, npc: Character, old_player_items:
     
     if disposition_changed:
         changes_to_show.append(f"💭 [cyan]{npc.name} feels: {npc.disposition}[/cyan]")
-    
-    if direction_changed and npc.direction:
-        changes_to_show.append(f"🎯 [yellow]Story direction: {npc.direction}[/yellow]")
     
     # Only display if there are changes to show
     if changes_to_show:
@@ -446,7 +379,6 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
         
         # Store state before player/NPC turn for comparison
         old_disposition_for_turn = npc.disposition
-        old_direction_for_turn = npc.direction
         old_npc_items_for_turn = [item.name for item in npc.items] # Store names for simple comparison
         old_player_items_for_turn = [item.name for item in player1.items]
 
@@ -488,7 +420,7 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
 
         # NPC's turn (if applicable)
         if action_processed_successfully and action_processed_successfully not in ["TRADE_ACCEPTED", "TRADE_DECLINED"]: # If true, it means player did something that might elicit a response
-            npc_actual_response_text = handle_npc_response(npc, player1, current_location) 
+            npc_actual_response_text = handle_npc_response(npc, player1, current_location)
         else:
             # This else block might not be strictly necessary anymore if 'continue' is used for failed actions.
             # However, handle_player_action returns false for empty input, or input not starting with /,
@@ -497,58 +429,8 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
             # this block would be hit. For now, it is defensive.
             pass # No NPC response needed if action_processed_successfully was false and we didn't continue.
 
-        # Game Master assesses disposition change after player action and NPC response (if any)
-        # Ensure player_msg for GM is the actual dialogue, not the /give command text itself
-        # If player_msg was a /give command, use the action_description_for_ai that was put into history
-        # However, handle_player_action already adds the correct user message to history for the GM.
-        # The GM can pull from the history, or we pass player_msg and npc_actual_response_text directly.
-        # For simplicity, let's ensure player_msg sent to GM is the one AI sees (already handled by add_dialogue_turn)
-        # The interaction history will have the player's turn. The npc_actual_response_text is the npc's direct reply.
-        
-        # Capture the last player message from history for the GM, as handle_player_action might modify it (e.g. for /give)
-        # Or, more simply, pass the original player_msg and the npc_actual_response_text directly.
-        # Let's pass player_msg (original input) and npc_actual_response_text.
-        
-        should_change_disp, new_disp, reason_for_change = game_master.assess_disposition_change(
-            player=player1, 
-            npc=npc, 
-            player_message=player_msg, # Original player input for this turn
-            npc_response=npc_actual_response_text # NPC's verbal response this turn
-        )
-
-        if should_change_disp and new_disp:
-            old_disposition_for_gm_change = npc.disposition # Store before GM changes it
-            npc.disposition = new_disp
-            # Log the GM's decision to interaction_history for full context if needed for future AI reference
-            gm_log_message = f"SYSTEM_OBSERVATION (Game Master): NPC disposition changed to '{new_disp}'. Reason: {reason_for_change}"
-            npc.interaction_history.add_entry(role="system", content=gm_log_message)
-            # The display_interaction_state will show the change, but we can add a specific GM note if desired
-            # Removed verbose GM message - the change will be shown in display_interaction_state
-            # We need to update old_disposition_for_turn if GM changed it, so display_interaction_state highlights it correctly.
-            # However, display_interaction_state compares with the start-of-turn disposition. 
-            # The GM change will be reflected as a change within the turn.
-            # The `old_disposition_for_turn` is correctly what it was at the very start of this interaction_count.
-
-        # Game Master assesses narrative direction after disposition assessment
-        should_provide_direction, new_direction, direction_reason = game_master.assess_narrative_direction(
-            player=player1,
-            npc=npc,
-            scenario=scenario,
-            player_message=player_msg,
-            npc_response=npc_actual_response_text,
-            victory_condition=victory_condition
-        )
-
-        if should_provide_direction and new_direction:
-            old_direction = npc.direction
-            npc.direction = new_direction
-            # Log the GM's direction decision to interaction_history
-            gm_direction_message = f"NARRATIVE_DIRECTION (Game Master): {new_direction}. Reason: {direction_reason}"
-            npc.interaction_history.add_entry(role="system", content=gm_direction_message)
-            # Removed verbose GM direction message - the change will be shown in display_interaction_state
-
         # Display state changes after both player and NPC (if any) have acted, and GM assessment
-        display_interaction_state(player1, npc, old_player_items_for_turn, old_npc_items_for_turn, old_disposition_for_turn, old_direction_for_turn)
+        display_interaction_state(player1, npc, old_player_items_for_turn, old_npc_items_for_turn, old_disposition_for_turn)
             
         # Check victory condition
         if game_master.evaluate_victory_condition(player1, npc, victory_condition):
@@ -608,16 +490,18 @@ def display_final_summary(player1: Player, npc: Character):
     console.line()
 
 def display_available_commands():
-    """Displays all available commands to the user."""
+    """Displays natural language examples for the AI-powered input system."""
     console.line()
-    rprint("[bold cyan]Commands:[/bold cyan]")
-    rprint("  [bright_white]/say[/bright_white] <message> - Talk to the character")
-    rprint("  [bright_white]/give[/bright_white] <item> - Offer an item")
-    rprint("  [bright_white]/trade[/bright_white] <proposal> - Propose a trade")
-    rprint("  [bright_white]/accept[/bright_white] [message] - Accept counter-proposal")
-    rprint("  [bright_white]/decline[/bright_white] [message] - Decline counter-proposal")
-    rprint("  [bright_white]/quit[/bright_white] - End conversation")
-    rprint("  [bright_white]/help[/bright_white] - Show commands")
+    rprint("[bold cyan]You can interact naturally! Here are some examples:[/bold cyan]")
+    rprint("  [bright_white]Talk:[/bright_white] 'Hello there!' or 'How are you today?'")
+    rprint("  [bright_white]Give items:[/bright_white] 'Here, take my sword' or 'I offer you this potion'")
+    rprint("  [bright_white]Propose trades:[/bright_white] 'I'll trade my coins for your key' or 'Want to swap items?'")
+    rprint("  [bright_white]Accept trades:[/bright_white] 'That sounds good, I accept' or 'Deal!'")
+    rprint("  [bright_white]Decline trades:[/bright_white] 'No thanks' or 'I decline your offer'")
+    rprint("  [bright_white]Get help:[/bright_white] 'help' or 'what can I do?'")
+    rprint("  [bright_white]Quit:[/bright_white] 'quit' or 'goodbye'")
+    console.line()
+    rprint("[dim]Just type naturally - the AI will understand what you want to do![/dim]")
     console.line()
 
 def start_game(scenario_name_to_load: str):

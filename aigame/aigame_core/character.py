@@ -4,6 +4,7 @@ import json
 from .item import Item, load_item_from_file
 from .location import Location
 from .interaction_history import InteractionHistory, MessageEntry
+from typing import TYPE_CHECKING, Optional
 
 # Rich imports
 from rich import print as rprint
@@ -15,6 +16,9 @@ from rich.console import Console
 ITEMS_BASE_PATH = "aigame/data/items"
 
 console = Console()
+
+if TYPE_CHECKING:
+    from .player import Player
 
 class Character:
     def __init__(self, name: str, personality: str, goal: str, disposition: str, items: list[Item]):
@@ -39,7 +43,6 @@ class Character:
         self.interaction_history: InteractionHistory = InteractionHistory()
         self.active_offer: dict | None = None # To store details of an item offered to this character
         self.active_trade_proposal: dict | None = None # To store details of a trade proposal made to this character
-        self.direction: str = "" # Game Master's narrative direction for this character
 
     def __str__(self) -> str:
         # This format is already quite panel-friendly
@@ -52,10 +55,6 @@ class Character:
             f"Items: {', '.join(item.name for item in self.items) if self.items else 'None'}"
         )
         
-        # Add direction if it exists
-        if self.direction:
-            base_info += f"\nCurrent Direction: {self.direction}"
-            
         return base_info
 
     def add_item(self, item: Item) -> None:
@@ -120,14 +119,6 @@ class Character:
             f"{location_info}\n\n"
         )
         
-        # Add direction if provided by Game Master
-        if self.direction:
-            system_message_content += (
-                f"NARRATIVE DIRECTION: {self.direction}\n"
-                f"This direction should guide your responses and actions to help shape the story. "
-                f"Incorporate this guidance naturally into your character's behavior.\n\n"
-            )
-        
         system_message_content += (
             f"You will act and speak as {self.name} based on this information. Do not break character. "
             f"Your dialogue should reflect your thoughts and speech. "
@@ -139,8 +130,7 @@ class Character:
             f"Pay close attention to any 'SYSTEM_ALERT' or 'SYSTEM_OBSERVATION' messages in the history. These provide direct prompts or context for you to consider significant changes or facts."
             f"You have tools available to interact with the game world. These include: "
             f"1. 'give_item_to_user': Use this tool if you willingly decide to give an item YOU possess to the user. You MUST use this tool to transfer an item. Clearly state your intention first." 
-            f"2. 'change_disposition': Use this to update your internal disposition/state of mind in response to significant events or interactions (positive or negative). Clearly state your intention or reasoning first."
-            f"3. 'accept_item_offer': If the player has offered you an item (their message will indicate this, e.g., '*I offer you ItemName.*'), use this tool to formally accept and take the item. State your intention to accept before using the tool."
+            f"2. 'accept_item_offer': If the player has offered you an item (their message will indicate this, e.g., '*I offer you ItemName.*'), use this tool to formally accept and take the item. State your intention to accept before using the tool."
         )
         
         messages: list[MessageEntry] = [{"role": "system", "content": system_message_content}]
@@ -177,12 +167,6 @@ class Character:
             f"You are currently carrying: {items_str}.\n"
             f"{location_info}\n\n"
         )
-        
-        if self.direction:
-            system_message_content += (
-                f"NARRATIVE DIRECTION: {self.direction}\n"
-                f"This direction should guide your decision-making.\n\n"
-            )
         
         system_message_content += (
             f"TRADE PROPOSAL: {offered_by_name} has proposed trading their '{player_item_name}' for your '{npc_item_name}'.\n"
@@ -344,41 +328,20 @@ class Character:
             "type": "function",
             "function": {
                 "name": "give_item_to_user",
-                "description": "Gives an item from the character's inventory to the user. Only use this if the character willingly and logically decides to give the item based on the conversation (e.g., as a reward, for significant help, a fair trade). The item must be one the character currently possesses.",
+                "description": "Gives an item from your inventory to the user. Use this when you willingly decide to give an item to the user. Clearly state your intention first.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "item_name": {
                             "type": "string",
-                            "description": "The exact name of the item to give. Must be an item the character possesses."
+                            "description": "The exact name of the item you want to give to the user."
                         },
                         "reason": {
                             "type": "string",
-                            "description": "A brief reason or thought process for why the character is giving this item now. This should reflect the conversation."
+                            "description": "A brief reason for why you are giving this item to the user."
                         }
                     },
                     "required": ["item_name", "reason"]
-                }
-            }
-        }
-        change_disposition_tool = {
-            "type": "function",
-            "function": {
-                "name": "change_disposition",
-                "description": "Updates the character's internal disposition or state of mind based on the interaction. Use after significant positive or negative events, or if the user's actions align or conflict with your goals/personality.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "new_disposition_state": {
-                            "type": "string",
-                            "description": "The new disposition or state of mind (e.g., 'more trusting and friendly', 'highly suspicious and wary', 'grateful and indebted', 'annoyed', 'pleased')."
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "A brief explanation for why the character's disposition is changing, reflecting the conversation."
-                        }
-                    },
-                    "required": ["new_disposition_state", "reason"]
                 }
             }
         }
@@ -403,7 +366,7 @@ class Character:
                 }
             }
         }
-        active_tools = [give_item_tool, change_disposition_tool, accept_item_offer_tool]
+        active_tools = [give_item_tool, accept_item_offer_tool]
 
         try:
             response = litellm.completion(
@@ -448,16 +411,6 @@ class Character:
                                     tool_result_content = f"Error: {self.name} tried to give '{item_name_to_give}' but failed to remove it internally or find the item object."
                             else:
                                 tool_result_content = f"{self.name} tried to give '{item_name_to_give}' (Reason: {reason_for_giving}) but does not possess it. Current items: {', '.join(item.name for item in self.items)}"
-                        elif function_name == "change_disposition":
-                            new_disposition_value = args.get("new_disposition_state")
-                            reason_for_change = args.get("reason", "No specific reason stated by AI.")
-                            # Removed verbose AI event message to reduce clutter
-                            if not new_disposition_value or not isinstance(new_disposition_value, str):
-                                tool_result_content = "Error: new_disposition_state not provided or invalid."
-                            else:
-                                self.disposition = new_disposition_value
-                                tool_result_content = f"{self.name}'s disposition changed to: '{self.disposition}'."
-                                # Removed verbose AI event message - disposition changes will be shown in game loop
                         elif function_name == "accept_item_offer":
                             item_name_to_accept = args.get("item_name")
                             reason_for_accepting = args.get("reason", "No specific reason stated by AI.")
@@ -523,6 +476,71 @@ class Character:
             rprint(Text(f"Error getting AI response for {self.name}: {e}", style="bold red"))
             return None
 
+    def get_ai_response_with_actions(self, player_object: 'Player', current_location: 'Location') -> tuple[str | None, dict]:
+        """
+        Enhanced version of get_ai_response that uses AI action parsing instead of tool calls.
+        
+        Returns:
+            tuple: (spoken_response: str | None, action_results: dict)
+        """
+        from .npc_action_parser import NPCActionParser
+        
+        # Get the basic AI response without tools
+        messages = self._prepare_llm_messages(current_location)
+        
+        try:
+            # Generate response without tool calls - just natural dialogue
+            response = litellm.completion(
+                model="openai/gpt-4.1-mini",
+                messages=messages,
+                temperature=0.7,
+                max_tokens=300
+            )
+            
+            ai_response = response.choices[0].message.content
+            if not ai_response:
+                return None, {'executed_actions': [], 'state_changes': {}, 'errors': ['Empty AI response']}
+            
+            # Parse the response for actions with debug mode disabled (we'll show debug info later)
+            parser = NPCActionParser(debug_mode=False)
+            context = {
+                'active_offer': getattr(self, 'active_offer', None),
+                'active_trade_proposal': getattr(self, 'active_trade_proposal', None)
+            }
+            
+            parse_result = parser.parse_npc_response(ai_response, self, player_object, context)
+            
+            if not parse_result['success']:
+                rprint(Text(f"Failed to parse NPC actions: {parse_result['error_message']}", style="dim red"))
+                return ai_response, {'executed_actions': [], 'state_changes': {}, 'errors': [parse_result['error_message']]}
+            
+            # Execute the parsed actions
+            action_results = parser.execute_actions(parse_result['actions'], self, player_object, context)
+            
+            # Add classification info to action_results for later display
+            if parse_result.get('actions'):
+                action_types = parse_result.get('action_types', ['unknown'])
+                confidence = parse_result.get('confidence', 0.0)
+                action_results['classification'] = {
+                    'action_types': action_types,
+                    'confidence': confidence
+                }
+            else:
+                # If no actions, it's dialogue only
+                action_results['classification'] = {
+                    'action_types': ['dialogue_only'],
+                    'confidence': parse_result.get('confidence', 1.0)
+                }
+            
+            # Add the response to dialogue history
+            self.add_dialogue_turn(speaker=self.name, message=ai_response)
+            
+            return ai_response, action_results
+            
+        except Exception as e:
+            rprint(Text(f"[bold red]Error during NPC AI response with actions: {e}[/bold red]"))
+            return None, {'executed_actions': [], 'state_changes': {}, 'errors': [str(e)]}
+
     @classmethod
     def from_dict(cls, data: dict) -> 'Character':
         if not isinstance(data, dict):
@@ -559,11 +577,6 @@ class Character:
             items=parsed_items
         )
         
-        # Set direction if provided in data (optional field)
-        direction = data.get("direction", "")
-        if direction and isinstance(direction, str):
-            character.direction = direction
-            
         return character
 
 def load_character_from_file(character_name: str, base_directory_path: str) -> Character:
