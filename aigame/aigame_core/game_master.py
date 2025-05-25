@@ -5,6 +5,7 @@ import json # For potentially formatting parts of the prompt or if GM needs to h
 from .player import Player
 from .character import Character
 from .scenario import Scenario # Added import for Scenario type hint
+from .config import DEFAULT_LLM_MODEL
 # Location might be needed if future GMs consider environment, but not for current victory condition
 # from .location import Location 
 
@@ -91,7 +92,7 @@ class GameMaster:
 
         try:
             response = litellm.completion(
-                model="openai/gpt-4.1-mini",
+                model=DEFAULT_LLM_MODEL,
                 messages=messages,
                 max_tokens=100, # Allow more tokens for reasoning
                 temperature=0.0, # We want deterministic evaluation
@@ -173,7 +174,7 @@ class GameMaster:
 
         try:
             response = litellm.completion(
-                model="openai/gpt-4.1-mini",
+                model=DEFAULT_LLM_MODEL,
                 messages=messages,
                 temperature=0.1, # Low temperature for precise parsing
                 response_format={"type": "json_object"}

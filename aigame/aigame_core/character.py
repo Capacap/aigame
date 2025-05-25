@@ -4,6 +4,7 @@ import json
 from .item import Item, load_item_from_file
 from .location import Location
 from .interaction_history import InteractionHistory, MessageEntry
+from .config import DEFAULT_LLM_MODEL
 from typing import TYPE_CHECKING, Optional
 
 # Rich imports
@@ -202,7 +203,7 @@ class Character:
         
         try:
             response = litellm.completion(
-                model="openai/gpt-4.1-mini",
+                model=DEFAULT_LLM_MODEL,
                 messages=messages,
                 temperature=0.3,
                 response_format={"type": "json_object"}
@@ -377,7 +378,7 @@ class Character:
         
         try:
             response = litellm.completion(
-                model="openai/gpt-4.1-mini",
+                model=DEFAULT_LLM_MODEL,
                 messages=messages,
                 temperature=0.3,
                 response_format={"type": "json_object"}
@@ -482,7 +483,7 @@ class Character:
 
         try:
             response = litellm.completion(
-                model="openai/gpt-4.1-mini",
+                model=DEFAULT_LLM_MODEL,
                 messages=current_messages,
                 tools=active_tools,
                 tool_choice="auto"
@@ -559,7 +560,7 @@ class Character:
                 # Get the updated history for the final call
                 messages_for_final_call = self._prepare_llm_messages(current_location)
 
-                final_response = litellm.completion(model="openai/gpt-4.1-mini", messages=messages_for_final_call)
+                final_response = litellm.completion(model=DEFAULT_LLM_MODEL, messages=messages_for_final_call)
                 ai_spoken_response = final_response.choices[0].message.content
 
                 # Add the AI's final spoken response to history
@@ -625,7 +626,7 @@ class Character:
         try:
             # Generate response without tool calls - just natural dialogue
             response = litellm.completion(
-                model="openai/gpt-4.1-mini",
+                model=DEFAULT_LLM_MODEL,
                 messages=messages,
                 temperature=0.7,
                 max_tokens=300

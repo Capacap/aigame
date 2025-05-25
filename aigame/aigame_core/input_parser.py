@@ -4,6 +4,7 @@ import litellm
 from typing import Dict, Any, Optional
 from rich import print as rprint
 from rich.text import Text
+from .config import DEFAULT_LLM_MODEL
 
 from .player import Player
 from .character import Character
@@ -251,7 +252,7 @@ class InputParser:
         
         try:
             response = litellm.completion(
-                model="openai/gpt-4.1-mini",
+                model=DEFAULT_LLM_MODEL,
                 messages=messages,
                 temperature=0.2,  # Low temperature for consistent classification
                 response_format={"type": "json_object"}
@@ -320,7 +321,7 @@ class InputParser:
         
         try:
             response = litellm.completion(
-                model="openai/gpt-4.1-mini",
+                model=DEFAULT_LLM_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -399,7 +400,7 @@ class InputParser:
         
         try:
             response = litellm.completion(
-                model="openai/gpt-4.1-mini",
+                model=DEFAULT_LLM_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -485,7 +486,7 @@ class InputParser:
         
         try:
             response = litellm.completion(
-                model="openai/gpt-4.1-mini",
+                model=DEFAULT_LLM_MODEL,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}

@@ -49,6 +49,41 @@ The project is ready for expansion with additional scenarios, characters, and ga
    python main.py
    ```
 
+## Model Configuration
+
+The game uses a global configuration system that makes it easy to switch between different AI models. By default, the game uses `openai/gpt-4.1-mini`, but you can easily change this.
+
+### Changing the Model
+
+**Option 1: Edit the configuration file (permanent change)**
+```python
+# Edit aigame/aigame_core/config.py
+DEFAULT_LLM_MODEL = "openai/gpt-4o-mini"  # or any other supported model
+```
+
+**Option 2: Change programmatically (temporary change)**
+```python
+from aigame.aigame_core import config
+config.DEFAULT_LLM_MODEL = "anthropic/claude-3-haiku-20240307"
+```
+
+### Supported Models
+
+The game supports any model compatible with LiteLLM, including:
+- **OpenAI**: `openai/gpt-4.1-mini`, `openai/gpt-4o-mini`, `openai/gpt-3.5-turbo`
+- **Anthropic**: `anthropic/claude-3-haiku-20240307`, `anthropic/claude-3-sonnet-20240229`
+- **Local models**: `ollama/llama2`, `ollama/mistral` (requires Ollama setup)
+- **Other providers**: See [LiteLLM documentation](https://docs.litellm.ai/docs/providers) for full list
+
+### Testing Model Changes
+
+Run the included example script to see how model configuration works:
+```bash
+python change_model_example.py
+```
+
+**Note**: Different models may have varying performance characteristics. GPT-4 models generally provide the best results for complex natural language understanding, while smaller models like GPT-3.5-turbo or Claude Haiku offer faster responses at lower cost.
+
 ## Example Gameplay
 
 ```

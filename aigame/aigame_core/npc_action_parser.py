@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional
 from rich import print as rprint
 from rich.text import Text
 from rich.panel import Panel
+from .config import DEFAULT_LLM_MODEL
 
 from .player import Player
 from .character import Character
@@ -169,7 +170,7 @@ class NPCActionParser:
         
         try:
             response = litellm.completion(
-                model="openai/gpt-4.1-mini",
+                model=DEFAULT_LLM_MODEL,
                 messages=messages,
                 temperature=0.1,  # Low temperature for precise action extraction
                 response_format={"type": "json_object"}
