@@ -33,9 +33,10 @@ class GameMaster:
         )
         return intro_text
 
-    def analyze_and_update_disposition(self, npc: Character, player: Player, recent_events: str) -> str:
+    def analyze_and_update_disposition(self, npc: Character, player: Player, recent_events: str, scenario: Scenario = None) -> str:
         """
         Analyzes recent events and updates the NPC's disposition accordingly.
+        The disposition will be oriented toward the scenario's victory condition when provided.
         Returns the new disposition as a natural language prompt.
         """
         # Validate arguments
@@ -62,18 +63,40 @@ class GameMaster:
                     role_name = player.name if entry["role"] == "user" else npc.name
                     conversation_context += f"{role_name}: {entry.get('content', '')}\n"
 
-            system_message = (
-                f"You are a Game Master AI analyzing how recent events should affect an NPC's disposition. "
-                f"Your task is to determine if the NPC's current disposition should change based on what just happened. "
-                f"Consider the NPC's personality, goals, and how they would realistically react to the recent events. "
-                f"The disposition should be a natural language description of the NPC's current emotional state, "
-                f"attitude, or mindset that will guide their future responses. "
-                f"Examples: 'suspicious and guarded', 'grateful and friendly', 'angry and hostile', "
-                f"'curious but cautious', 'impressed and respectful', 'disappointed but hopeful'. "
-                f"Only change the disposition if the events warrant a meaningful shift. "
-                f"Respond with a JSON object containing: "
-                f"'should_update' (boolean), 'new_disposition' (string), and 'reasoning' (string)."
-            )
+            # Build system message with scenario-specific guidance
+            if scenario:
+                system_message = (
+                    f"You are a Game Master AI analyzing how recent events should affect an NPC's disposition. "
+                    f"Your task is to determine if the NPC's current disposition should change based on what just happened. "
+                    f"IMPORTANT: The disposition should reflect how close the NPC is to fulfilling the scenario's victory condition. "
+                    f"Consider the NPC's personality, goals, and how they would realistically react to the recent events, "
+                    f"but focus the disposition on their likelihood to help achieve the victory condition.\n\n"
+                    f"SCENARIO CONTEXT:\n"
+                    f"Victory Condition: {scenario.victory_condition}\n"
+                    f"Scenario: {scenario.name} - {scenario.description}\n\n"
+                    f"The disposition should indicate the NPC's current stance toward the victory condition. "
+                    f"Examples for different scenarios:\n"
+                    f"- For a librarian guarding a book: 'reluctant but softening', 'firmly protective', 'considering the request', 'willing to share'\n"
+                    f"- For a merchant: 'interested in negotiating', 'skeptical of the offer', 'eager to make a deal', 'dismissive'\n"
+                    f"- For someone with information: 'secretive and cautious', 'beginning to trust', 'ready to reveal secrets'\n\n"
+                    f"Only change the disposition if the events warrant a meaningful shift toward or away from the victory condition. "
+                    f"Respond with a JSON object containing: "
+                    f"'should_update' (boolean), 'new_disposition' (string), and 'reasoning' (string)."
+                )
+            else:
+                # Fallback to original system message if no scenario provided
+                system_message = (
+                    f"You are a Game Master AI analyzing how recent events should affect an NPC's disposition. "
+                    f"Your task is to determine if the NPC's current disposition should change based on what just happened. "
+                    f"Consider the NPC's personality, goals, and how they would realistically react to the recent events. "
+                    f"The disposition should be a natural language description of the NPC's current emotional state, "
+                    f"attitude, or mindset that will guide their future responses. "
+                    f"Examples: 'suspicious and guarded', 'grateful and friendly', 'angry and hostile', "
+                    f"'curious but cautious', 'impressed and respectful', 'disappointed but hopeful'. "
+                    f"Only change the disposition if the events warrant a meaningful shift. "
+                    f"Respond with a JSON object containing: "
+                    f"'should_update' (boolean), 'new_disposition' (string), and 'reasoning' (string)."
+                )
 
             user_prompt = (
                 f"NPC: {npc.name}\n"

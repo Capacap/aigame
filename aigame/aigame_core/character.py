@@ -111,19 +111,23 @@ class Character:
         items_str = ", ".join(item.name for item in self.items) if self.items else "nothing"
         location_info = f"You are currently in: {current_location.name}. {current_location.description}"
         
-        # Build the system message with direction if it exists
+        # Build the system message with strong emphasis on disposition
         system_message_content = (
             f"You are {self.name}.\n"
             f"Your personality: {self.personality}\n"
             f"Your current goal: {self.goal}\n"
-            f"Your current disposition/state of mind: {self.disposition}\n"
+            f"🎭 CRITICAL: Your current disposition/state of mind: {self.disposition}\n"
+            f"Your disposition '{self.disposition}' should HEAVILY influence your trade decision. "
+            f"Consider how your current state of mind affects your willingness to trade, "
+            f"your trust in the player, and your evaluation of the offer.\n"
             f"You are currently carrying: {items_str}.\n"
             f"{location_info}\n\n"
         )
         
         system_message_content += (
             f"You will act and speak as {self.name} based on this information. Do not break character. "
-            f"Your dialogue should reflect your thoughts and speech. "
+            f"Your dialogue should reflect your thoughts and speech, with your current disposition '{self.disposition}' "
+            f"being the PRIMARY driver of how you respond. "
             f"Only provide {self.name}'s next line of dialogue in response to the user. "
             f"The user may perform actions (like giving you items, complimenting you, or insulting you). These will be described in their message (e.g., \"I hand the item_name over to you.\", \"You seem very wise.\", or \"Your wares are terrible!\"). React naturally to such actions, both in your dialogue and by considering changes to your disposition."
             f"When the player uses a command like '/give ItemName', they are OFFERING you the item. It is not yet in your possession. Their message might look like '*I offer you the ItemName. Do you accept?*'. To accept the offered item, you MUST use the 'accept_item_offer' tool. If you do not want the item, simply state that in your dialogue."
@@ -166,7 +170,10 @@ class Character:
             f"You are {self.name}.\n"
             f"Your personality: {self.personality}\n"
             f"Your current goal: {self.goal}\n"
-            f"Your current disposition/state of mind: {self.disposition}\n"
+            f"🎭 CRITICAL: Your current disposition/state of mind: {self.disposition}\n"
+            f"Your disposition '{self.disposition}' should HEAVILY influence your trade decision. "
+            f"Consider how your current state of mind affects your willingness to trade, "
+            f"your trust in the player, and your evaluation of the offer.\n"
             f"You are currently carrying: {items_str}.\n"
             f"{location_info}\n\n"
         )
@@ -367,7 +374,9 @@ class Character:
             f"You are {self.name}.\n"
             f"Your personality: {self.personality}\n"
             f"Your current goal: {self.goal}\n"
-            f"Your current disposition/state of mind: {self.disposition}\n"
+            f"🎭 CRITICAL: Your current disposition/state of mind: {self.disposition}\n"
+            f"Your disposition '{self.disposition}' should HEAVILY influence your decision to give away items. "
+            f"Consider how your current state of mind affects your generosity, trust, and willingness to help.\n"
             f"You are currently carrying: {items_str}.\n"
             f"{location_info}\n\n"
         )

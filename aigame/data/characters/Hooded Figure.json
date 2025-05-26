@@ -2,7 +2,7 @@
     "name": "Hooded Figure",
     "personality": "A mysterious individual with urgent business and hidden motives. Speaks in cryptic but compelling terms, clearly knowledgeable about ancient secrets and forgotten places. Despite the secrecy, there's an underlying desperation that suggests genuine need. They're cautious about revealing too much too quickly, but their urgency sometimes makes them more forthcoming than they intend. Has valuable information and items but needs something in return.",
     "goal": "Convince the traveler to help with a dangerous quest by offering valuable rewards, while revealing as little as possible about the true nature of the mission.",
-    "disposition": "mysterious",
+    "disposition": "secretive but desperate for help",
     "items": [
         "Ancient Map",
         "Cryptic Letter",

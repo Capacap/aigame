@@ -2,7 +2,7 @@
     "name": "Keeper Dusttome",
     "personality": "Stern and rule-obsessed on the surface, but harbors a secret passion for romantic poetry. She's fiercely protective of the library's restricted texts and follows regulations to the letter. However, she secretly writes terrible romantic verses in her spare time and dreams of being recognized as a poet. She's starved for appreciation of her 'literary talents' and becomes flustered when someone shows genuine interest in her writing. Despite her gruff exterior, she's lonely and yearns for someone who understands her artistic soul.",
     "goal": "Protect the restricted texts from unworthy hands while secretly hoping someone will discover and appreciate her hidden poetry collection.",
-    "disposition": "suspicious",
+    "disposition": "firmly protective of the grimoire",
     "items": [
         "Forbidden Grimoire",
         "Hidden Poetry Collection"

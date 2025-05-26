@@ -419,7 +419,7 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
         # Analyze NPC's opening and update disposition if needed
         if npc_opening_response:
             opening_events = f"Game started; {npc.name} spoke first: {npc_opening_response}"
-            game_master.analyze_and_update_disposition(npc, player1, opening_events)
+            game_master.analyze_and_update_disposition(npc, player1, opening_events, scenario)
         
         # Display any state changes from NPC's opening
         display_interaction_state(player1, npc, old_player_items_initial, old_npc_items_initial, old_disposition_initial)
@@ -539,7 +539,7 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
             # Only analyze if there were meaningful events
             if recent_events:
                 events_summary = "; ".join(recent_events)
-                game_master.analyze_and_update_disposition(npc, player1, events_summary)
+                game_master.analyze_and_update_disposition(npc, player1, events_summary, scenario)
 
         # === STATE CHANGES SECTION ===
         # Display state changes after both player and NPC (if any) have acted, and GM assessment
