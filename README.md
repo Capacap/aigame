@@ -1,37 +1,66 @@
-# AI Text Adventure Game
+# AI Adventure Game
 
-This project is a Python-based text adventure game driven by Large Language Models (LLMs) with natural language interaction.
+A sophisticated text-based adventure game powered by Large Language Models (LLMs). Experience dynamic conversations, intelligent NPCs, and emergent storytelling where every interaction shapes your journey.
 
-## Overview
+## Features
 
-The game allows players to interact with non-player characters (NPCs) and the game world through **natural language** - no commands or special syntax required. Both player input and NPC responses are powered by AI, providing dynamic and engaging gameplay. 
+- **Dynamic Conversations**: NPCs powered by AI respond naturally to any input
+- **Intelligent Action Parsing**: Natural language commands are understood contextually
+- **Rich Storytelling**: AI-generated scenarios with meaningful character interactions
+- **Flexible Item System**: Trade, give, and request items through natural dialogue
+- **Adaptive NPCs**: Character dispositions change based on your interactions
+- **Victory Conditions**: Each scenario has unique objectives to achieve
+- **Beautiful Console Interface**: Rich text formatting and intuitive displays
+- **Multiple AI Models**: Support for OpenAI, Anthropic, and local models via LiteLLM
+- **LLM Debug Mode**: Track AI invocations for development and understanding
 
-### Key Features
+## Quick Start
 
-- **Natural Language Player Input**: Type naturally - "Hello there!", "Here, take my sword", "I'll trade my coins for your key"
-- **AI-Powered NPC Actions**: NPCs can perform actions through natural dialogue - "Here, take this ring - you've earned it!"
-- **Dynamic Character Interactions**: NPCs respond contextually with changing dispositions and behaviors
-- **Flexible Item Trading**: Propose, accept, decline, and counter-propose trades through conversation
-- **AI Game Master**: Evaluates victory conditions and provides narrative epilogues
-- **Scenario-Based Gameplay**: Structured adventures with defined objectives and victory conditions
+1. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### Technical Highlights
+2. **Set up API Key**:
+   ```bash
+   export OPENAI_API_KEY="your-api-key-here"
+   ```
 
-- **Two-Step AI Parsing**: Input classification followed by parameter extraction for reliable natural language understanding
-- **Intelligent Fallbacks**: Code-level validation ensures graceful handling of edge cases
-- **Clean Architecture**: Clear separation between AI responsibilities (understanding intent) and code responsibilities (game state validation)
-- **Debug-Friendly**: Optional classification logging for development and testing
+3. **Run the Game**:
+   ```bash
+   python main.py
+   ```
 
-## Status
+4. **Enable Debug Mode** (optional):
+   ```bash
+   python main.py --debug
+   # or
+   export AIGAME_DEBUG=true
+   python main.py
+   ```
 
-**The core natural language interaction system is complete and functional.** The game successfully demonstrates:
-- ✅ Natural language player input parsing
-- ✅ AI-powered NPC action extraction from dialogue
-- ✅ Dynamic trading and item management
-- ✅ Victory condition evaluation
-- ✅ Complete game scenarios
+## Debug Mode
 
-The project is ready for expansion with additional scenarios, characters, and game mechanics.
+The game includes a comprehensive debug system that tracks all LLM invocations. When enabled, you'll see concise messages showing:
+
+- Which component is making an LLM call
+- The purpose of each call
+- The model being used
+- The order of operations
+
+**Enable Debug Mode:**
+- Command line: `python main.py --debug` or `python main.py -d`
+- Environment variable: `export AIGAME_DEBUG=true`
+- **In-game toggle**: Type `debug` in the scenario selection menu to toggle debug mode on/off
+
+**Example Debug Output:**
+```
+🤖 LLM Call: InputParser → Input classification [openai/gpt-4.1-mini]
+🤖 LLM Call: Character → Dialogue generation for Keeper Dusttome [openai/gpt-4.1-mini]
+🤖 LLM Call: GameMaster → Disposition analysis for Keeper Dusttome [openai/gpt-4.1-mini]
+```
+
+This helps developers understand the AI decision-making process and optimize performance.
 
 ## Running the Game
 
@@ -88,52 +117,25 @@ python change_model_example.py
 
 ```
 Alex the Scholar: Hello there, how are you?
-Input classified as: dialogue (confidence: 0.95)
+🤖 LLM Call: InputParser → Input classification [openai/gpt-4.1-mini]
+🤖 LLM Call: Character → Dialogue generation for Archivist Silas [openai/gpt-4.1-mini]
 
 Archivist Silas: Greetings! I am well, though I seek a translation cypher for my research.
-NPC response classified as: dialogue_only (confidence: 1.00)
 
-Alex the Scholar: Here, take my translation cypher
-Input classified as: give_item (confidence: 0.95)
-💝 You offer the translation cypher to Archivist Silas
+Alex the Scholar: I have a translation cypher! Would you like to trade for your key?
+🤖 LLM Call: InputParser → Input classification [openai/gpt-4.1-mini]
+🤖 LLM Call: GameMaster → Trade proposal parsing [openai/gpt-4.1-mini]
+🤖 LLM Call: Character → Trade decision for Archivist Silas [openai/gpt-4.1-mini]
 
-Archivist Silas: Excellent! In return, let me give you this Echo Chamber Key.
-NPC actions detected: ['accept_offer', 'give_item'] (confidence: 0.95)
-✅ Archivist Silas accepts your translation cypher
-🎁 Archivist Silas gives you the Echo Chamber Key
-
-🎉 SUCCESS! Victory condition achieved!
+Archivist Silas: Excellent! That cypher would be invaluable for my work. I accept your trade.
 ```
 
-## Project Structure
+## Game Mechanics
 
-- `main.py`: Main entry point with scenario selection
-- `aigame/aigame_core/`: Core game logic modules:
-  - `game_loop.py`: Main game interaction flow and UI
-  - `input_parser.py`: **AI-powered natural language input parsing**
-  - `npc_action_parser.py`: **AI-powered NPC action extraction from dialogue**
-  - `character.py`: NPC and player character logic with AI response generation
-  - `player.py`: Player class and inventory management
-  - `game_master.py`: AI Game Master for narrative and victory evaluation
-  - `item.py`: Item properties and behavior
-  - `location.py`: Game location definitions
-  - `scenario.py`: Scenario structure and loading
-  - `interaction_history.py`: Conversation history management
-- `aigame/data/`: JSON data files for game entities:
-  - `characters/`: Character definitions with personality, goals, and starting items
-  - `items/`: Item definitions with names and descriptions
-  - `locations/`: Location definitions with names and descriptions
-  - `scenarios/`: Scenario definitions with victory conditions and entity references
-- `requirements.txt`: Python package dependencies
-
-## Architecture
-
-The game uses a **two-step AI parsing approach**:
-
-1. **Classification**: AI determines the type of action the player wants to perform
-2. **Parameter Extraction**: AI extracts specific details (item names, trade terms, etc.)
-
-**Intelligent Fallbacks**: If the AI classifies an action that isn't valid in the current game state (e.g., accepting a trade when no trade exists), the code automatically converts it to dialogue, ensuring the conversation never breaks.
+### Natural Language Processing
+- **Input Classification**: AI determines whether you're trying to talk, trade, give items, or perform other actions
+- **Contextual Understanding**: The game understands references, implications, and natural speech patterns
+- **Intelligent Fallbacks**: If the AI classifies an action that isn't valid in the current game state (e.g., accepting a trade when no trade exists), the code automatically converts it to dialogue, ensuring the conversation never breaks.
 
 ## Dependencies
 
@@ -148,3 +150,26 @@ The game is designed for easy extension:
 - Create new characters, items, and locations through JSON definitions
 - Extend action types in the input parser for new game mechanics
 - Add new victory condition types in the game master
+- Implement new AI models through LiteLLM configuration
+
+## Development
+
+### Debug Mode for Development
+
+The debug system is particularly useful for:
+- Understanding AI decision flows
+- Optimizing prompt engineering
+- Debugging unexpected behavior
+- Performance analysis
+- Educational purposes
+
+### Architecture
+
+The game follows a modular architecture:
+- **Game Loop**: Main game flow and state management
+- **Characters**: AI-powered NPCs with dynamic personalities
+- **Input Parser**: Natural language understanding for player commands
+- **Game Master**: Scenario management and victory condition evaluation
+- **Action Parser**: Extracts actions from NPC natural language responses
+
+Each component that interacts with LLMs includes debug tracking for transparency.

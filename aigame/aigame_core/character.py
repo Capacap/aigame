@@ -4,7 +4,7 @@ import json
 from .item import Item, load_item_from_file
 from .location import Location
 from .interaction_history import InteractionHistory, MessageEntry
-from .config import DEFAULT_LLM_MODEL
+from .config import DEFAULT_LLM_MODEL, debug_llm_call
 from typing import TYPE_CHECKING, Optional
 
 # Rich imports
@@ -146,67 +146,36 @@ class Character:
 
     def handle_standing_trade_offer(self, player_object: 'Player', current_location: 'Location') -> str | None:
         """
-        Handles any standing trade offer before generating dialogue.
-        Uses AI to decide whether to accept, reject, or counter the trade.
-        Returns a message about the trade decision, or None if no trade offer exists.
+        Handles a standing trade offer using AI to make the decision.
+        Returns the NPC's spoken response or None if no response.
         """
         if not self.active_trade_proposal:
             return None
-            
-        from .player import Player
-        
-        # Get trade proposal details
+
+        # Build context for the AI
+        offered_by_name = self.active_trade_proposal.get("offered_by_name", "")
         player_item_name = self.active_trade_proposal.get("player_item_name", "")
         npc_item_name = self.active_trade_proposal.get("npc_item_name", "")
-        player_item_object = self.active_trade_proposal.get("player_item_object")
-        npc_item_object = self.active_trade_proposal.get("npc_item_object")
-        offered_by_name = self.active_trade_proposal.get("offered_by_name", "Player")
+
+        # Prepare messages for LLM
+        messages = self._prepare_llm_messages(current_location)
         
-        # Prepare context for AI decision
-        items_str = ", ".join(item.name for item in self.items) if self.items else "nothing"
-        location_info = f"You are currently in: {current_location.name}. {current_location.description}"
-        
-        system_message_content = (
-            f"You are {self.name}.\n"
-            f"Your personality: {self.personality}\n"
-            f"Your current goal: {self.goal}\n"
-            f"🎭 CRITICAL: Your current disposition/state of mind: {self.disposition}\n"
-            f"Your disposition '{self.disposition}' should HEAVILY influence your trade decision. "
-            f"Consider how your current state of mind affects your willingness to trade, "
-            f"your trust in the player, and your evaluation of the offer.\n"
-            f"You are currently carrying: {items_str}.\n"
-            f"{location_info}\n\n"
+        # Add trade decision context
+        trade_context = (
+            f"TRADE_DECISION_REQUIRED: {offered_by_name} has proposed trading their '{player_item_name}' "
+            f"for your '{npc_item_name}'. You must decide whether to ACCEPT or REJECT this trade proposal. "
+            f"🎭 CRITICAL: Your disposition '{self.disposition}' should heavily influence this decision. "
+            f"Consider: Does this trade align with your goals? Do you trust the player? "
+            f"Is the trade fair? How does your current disposition affect your willingness to trade? "
+            f"Respond with a JSON object containing: "
+            f"'decision' (either 'ACCEPT' or 'REJECT'), "
+            f"'spoken_response' (what you say to the player), and "
+            f"'reasoning' (brief explanation of your decision)."
         )
         
-        system_message_content += (
-            f"TRADE PROPOSAL: {offered_by_name} has proposed trading their '{player_item_name}' for your '{npc_item_name}'.\n"
-            f"You MUST decide on this trade proposal. You have three options:\n"
-            f"1. ACCEPT - Accept the trade as proposed\n"
-            f"2. REJECT - Decline the trade\n"
-            f"3. COUNTER - Propose a different 1-for-1 trade (only using items that actually exist)\n\n"
-            f"Available items for counter-proposals:\n"
-            f"- Player has: {', '.join(item.name for item in player_object.items)}\n"
-            f"- You have: {', '.join(item.name for item in self.items)}\n\n"
-            f"IMPORTANT COUNTER-PROPOSAL RULES:\n"
-            f"- A counter-proposal MUST be different from the original proposal\n"
-            f"- Original proposal: Player gives '{player_item_name}' → You give '{npc_item_name}'\n"
-            f"- Counter-proposals are 1-for-1 trades only (one item for one item)\n"
-            f"- Examples: Ask for a different item from the player, or offer a different item yourself\n"
-            f"- If you want multiple items, use REJECT and explain in your dialogue\n\n"
-            f"Respond with a JSON object containing:\n"
-            f"- 'decision': 'ACCEPT', 'REJECT', or 'COUNTER'\n"
-            f"- 'spoken_response': Your dialogue explaining the decision\n"
-            f"- 'counter_player_item': (only if COUNTER) EXACT name of ONE item you want from player\n"
-            f"- 'counter_npc_item': (only if COUNTER) EXACT name of ONE item you're willing to offer\n"
-            f"- 'reasoning': Brief internal reasoning for your decision\n\n"
-            f"IMPORTANT: For counter-proposals, only use EXACT item names from the available lists above. "
-            f"If you want multiple items or complex terms, use REJECT and explain in your dialogue.\n"
-            f"Consider your personality, goals, and the value of the items when deciding."
-        )
+        messages.append({"role": "user", "content": trade_context})
         
-        # Get conversation history for context
-        messages = [{"role": "system", "content": system_message_content}]
-        messages.extend(self.interaction_history.get_llm_history())
+        debug_llm_call("Character", f"Trade decision for {self.name}", DEFAULT_LLM_MODEL)
         
         try:
             response = litellm.completion(
@@ -259,80 +228,6 @@ class Character:
                         self.active_trade_proposal = None
                         return f"[Trade failed - one party no longer has the required items. {spoken_response}]"
                 
-                elif decision == "COUNTER":
-                    counter_player_item = decision_data.get("counter_player_item", "")
-                    counter_npc_item = decision_data.get("counter_npc_item", "")
-                    
-                    # Validate that counter-proposal is actually different from original
-                    if (counter_player_item.lower() == player_item_name.lower() and 
-                        counter_npc_item.lower() == npc_item_name.lower()):
-                        rprint(Text("Counter-proposal is identical to original - treating as ACCEPT", style="dim yellow"))
-                        # Execute the trade as if it was accepted
-                        if (player_item_object and npc_item_object and 
-                            player_object.has_item(player_item_object) and self.has_item(npc_item_object)):
-                            
-                            if player_object.remove_item(player_item_object) and self.remove_item(npc_item_object):
-                                self.add_item(player_item_object)  # NPC gets player's item
-                                player_object.add_item(npc_item_object)  # Player gets NPC's item
-                                rprint(Text.assemble(Text("TRADE COMPLETED: ", style="dim bright_green"), 
-                                                   Text(f"{self.name} traded '{npc_item_name}' for '{player_item_name}'.", style="bright_green")))
-                                self.active_trade_proposal = None
-                                
-                                # Add system message to inform AI about the completed trade
-                                trade_completion_message = f"SYSTEM_ALERT: Trade completed successfully. You just traded your '{npc_item_name}' for the player's '{player_item_name}'. The exchange is done. Respond naturally to this completed transaction."
-                                self.interaction_history.add_entry(role="system", content=trade_completion_message)
-                                
-                                # Add the spoken response to conversation history
-                                if spoken_response:
-                                    self.add_dialogue_turn(speaker=self.name, message=spoken_response)
-                                
-                                return spoken_response
-                            else:
-                                self.active_trade_proposal = None
-                                return f"[Trade failed due to item transfer error. {spoken_response}]"
-                        else:
-                            self.active_trade_proposal = None
-                            return f"[Trade failed - one party no longer has the required items. {spoken_response}]"
-                    
-                    if counter_player_item and counter_npc_item:
-                        # Verify the counter-proposal items exist
-                        if player_object.has_item(counter_player_item) and self.has_item(counter_npc_item):
-                            # Get the actual item objects
-                            counter_player_obj = next((item for item in player_object.items if item.name.lower() == counter_player_item.lower()), None)
-                            counter_npc_obj = next((item for item in self.items if item.name.lower() == counter_npc_item.lower()), None)
-                            
-                            if counter_player_obj and counter_npc_obj:
-                                # Update the trade proposal with counter terms
-                                self.active_trade_proposal = {
-                                    "player_item_name": counter_player_obj.name,
-                                    "npc_item_name": counter_npc_obj.name,
-                                    "player_item_object": counter_player_obj,
-                                    "npc_item_object": counter_npc_obj,
-                                    "offered_by_name": self.name,  # Counter-proposal is from NPC
-                                    "offered_by_object": self
-                                }
-                                rprint(Text.assemble(Text("COUNTER-PROPOSAL: ", style="dim cyan"), 
-                                                   Text(f"{self.name} proposes '{counter_npc_item}' for '{counter_player_item}' instead.", style="cyan")))
-                                
-                                # Add the spoken response to conversation history
-                                if spoken_response:
-                                    self.add_dialogue_turn(speaker=self.name, message=spoken_response)
-                                
-                                return spoken_response
-                            else:
-                                self.active_trade_proposal = None
-                                return f"[Counter-proposal failed - couldn't find item objects. {spoken_response}]"
-                        else:
-                            self.active_trade_proposal = None
-                            return f"[Counter-proposal failed - items don't exist. {spoken_response}]"
-                    else:
-                        # Invalid counter-proposal, treat as rejection
-                        self.active_trade_proposal = None
-                        # Add the spoken response to conversation history
-                        if spoken_response:
-                            self.add_dialogue_turn(speaker=self.name, message=spoken_response)
-                        return f"{spoken_response}"
-                
                 else:  # REJECT or any other value
                     self.active_trade_proposal = None
                     # Add the spoken response to conversation history
@@ -352,57 +247,35 @@ class Character:
 
     def handle_standing_request(self, player_object: 'Player', current_location: 'Location') -> str | None:
         """
-        Handles any standing item request before generating dialogue.
-        Uses AI to decide whether to accept or decline the request.
-        Returns a message about the request decision, or None if no request exists.
+        Handles a standing item request using AI to make the decision.
+        Returns the NPC's spoken response or None if no response.
         """
         if not self.active_request:
             return None
-            
-        from .player import Player
+
+        # Build context for the AI
+        requested_by_name = self.active_request.get("requested_by_name", "")
+        item_name = self.active_request.get("item_name", "")
+
+        # Prepare messages for LLM
+        messages = self._prepare_llm_messages(current_location)
         
-        # Get request details
-        requested_item_name = self.active_request.get("item_name", "")
-        requested_item_object = self.active_request.get("item_object")
-        requested_by_name = self.active_request.get("requested_by_name", "Player")
-        
-        # Prepare context for AI decision
-        items_str = ", ".join(item.name for item in self.items) if self.items else "nothing"
-        location_info = f"You are currently in: {current_location.name}. {current_location.description}"
-        
-        system_message_content = (
-            f"You are {self.name}.\n"
-            f"Your personality: {self.personality}\n"
-            f"Your current goal: {self.goal}\n"
-            f"🎭 CRITICAL: Your current disposition/state of mind: {self.disposition}\n"
-            f"Your disposition '{self.disposition}' should HEAVILY influence your decision to give away items. "
-            f"Consider how your current state of mind affects your generosity, trust, and willingness to help.\n"
-            f"You are currently carrying: {items_str}.\n"
-            f"{location_info}\n\n"
+        # Add request decision context
+        request_context = (
+            f"REQUEST_DECISION_REQUIRED: {requested_by_name} has asked for your '{item_name}'. "
+            f"You must decide whether to GIVE or DECLINE this request. "
+            f"🎭 CRITICAL: Your disposition '{self.disposition}' should heavily influence this decision. "
+            f"Consider: Do you want to help this person? Do you trust them? "
+            f"Is this item important to you? How does your current disposition affect your generosity? "
+            f"Respond with a JSON object containing: "
+            f"'decision' (either 'GIVE' or 'DECLINE'), "
+            f"'spoken_response' (what you say to the player), and "
+            f"'reasoning' (brief explanation of your decision)."
         )
         
-        system_message_content += (
-            f"ITEM REQUEST: {requested_by_name} has asked for your '{requested_item_name}'.\n"
-            f"You MUST decide on this request. You have two options:\n"
-            f"1. ACCEPT - Give the item to the player\n"
-            f"2. DECLINE - Refuse to give the item\n\n"
-            f"Consider your personality, goals, disposition, and relationship with the player.\n"
-            f"Think about:\n"
-            f"- How valuable is this item to you?\n"
-            f"- Do you trust or like the player?\n"
-            f"- Does giving this item align with your goals?\n"
-            f"- What would someone with your personality do?\n\n"
-            f"Respond with a JSON object containing:\n"
-            f"- 'decision': 'ACCEPT' or 'DECLINE'\n"
-            f"- 'spoken_response': Your dialogue explaining the decision\n"
-            f"- 'reasoning': Brief internal reasoning for your decision\n\n"
-            f"Be true to your character. If you're generous, you might give items freely. "
-            f"If you're cautious or selfish, you might refuse. Consider the context and your relationship with the player."
-        )
+        messages.append({"role": "user", "content": request_context})
         
-        # Get conversation history for context
-        messages = [{"role": "system", "content": system_message_content}]
-        messages.extend(self.interaction_history.get_llm_history())
+        debug_llm_call("Character", f"Request decision for {self.name}", DEFAULT_LLM_MODEL)
         
         try:
             response = litellm.completion(
@@ -433,11 +306,11 @@ class Character:
                         if self.remove_item(requested_item_object):
                             player_object.add_item(requested_item_object)
                             rprint(Text.assemble(Text("REQUEST GRANTED: ", style="dim bright_green"), 
-                                               Text(f"{self.name} gives '{requested_item_name}' to {requested_by_name}.", style="bright_green")))
+                                               Text(f"{self.name} gives '{item_name}' to {requested_by_name}.", style="bright_green")))
                             self.active_request = None
                             
                             # Add system message to inform AI about the completed transfer
-                            request_completion_message = f"SYSTEM_ALERT: You just gave your '{requested_item_name}' to {requested_by_name} as they requested. The item transfer is complete. Respond naturally to this generous act."
+                            request_completion_message = f"SYSTEM_ALERT: You just gave your '{item_name}' to {requested_by_name} as they requested. The item transfer is complete. Respond naturally to this generous act."
                             self.interaction_history.add_entry(role="system", content=request_completion_message)
                             
                             # Add the spoken response to conversation history
@@ -450,7 +323,7 @@ class Character:
                             return f"[Request failed due to item transfer error. {spoken_response}]"
                     else:
                         self.active_request = None
-                        return f"[Request failed - {self.name} no longer has the '{requested_item_name}'. {spoken_response}]"
+                        return f"[Request failed - {self.name} no longer has the '{item_name}'. {spoken_response}]"
                 
                 else:  # DECLINE or any other value
                     self.active_request = None
@@ -471,50 +344,53 @@ class Character:
 
     def get_ai_response(self, player_object: 'Player', current_location: Location) -> str | None:
         from .player import Player # Corrected import: Import Player here, inside the method
+
+        # Validate arguments
+        if not isinstance(player_object, Player):
+            raise ValueError("player_object must be a Player instance.")
+        if not isinstance(current_location, Location):
+            raise ValueError("current_location must be a Location instance.")
+
+        # Handle standing trade offer first
+        trade_response = self.handle_standing_trade_offer(player_object, current_location)
+        if trade_response:
+            return trade_response
+
+        # Handle standing request second
+        request_response = self.handle_standing_request(player_object, current_location)
+        if request_response:
+            return request_response
+
+        # Handle standing offer third
+        offer_response = self.handle_standing_offer(player_object, current_location)
+        if offer_response:
+            return offer_response
+
+        # Regular conversation - prepare messages
         current_messages = self._prepare_llm_messages(current_location)
-        give_item_tool = {
-            "type": "function",
-            "function": {
-                "name": "give_item_to_user",
-                "description": "Gives an item from your inventory to the user. Use this when you willingly decide to give an item to the user. Clearly state your intention first.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "item_name": {
-                            "type": "string",
-                            "description": "The exact name of the item you want to give to the user."
+
+        # Define available tools for the NPC
+        active_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "give_item_to_player",
+                    "description": "Give an item from your inventory to the player",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "item_name": {
+                                "type": "string",
+                                "description": "The exact name of the item to give to the player"
+                            }
                         },
-                        "reason": {
-                            "type": "string",
-                            "description": "A brief reason for why you are giving this item to the user."
-                        }
-                    },
-                    "required": ["item_name", "reason"]
+                        "required": ["item_name"]
+                    }
                 }
             }
-        }
-        accept_item_offer_tool = {
-            "type": "function",
-            "function": {
-                "name": "accept_item_offer",
-                "description": "Accepts an item currently being offered by the player. Only use if the player's message clearly indicates they are offering you a specific item. Upon successful use, the item is transferred to your inventory.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "item_name": {
-                            "type": "string",
-                            "description": "The exact name of the item you are accepting from the player's offer."
-                        },
-                        "reason": {
-                            "type": "string",
-                            "description": "A brief reason or acknowledgement for why you are accepting this item now."
-                        }
-                    },
-                    "required": ["item_name", "reason"]
-                }
-            }
-        }
-        active_tools = [give_item_tool, accept_item_offer_tool]
+        ]
+
+        debug_llm_call("Character", f"Dialogue generation for {self.name}", DEFAULT_LLM_MODEL)
 
         try:
             response = litellm.completion(
@@ -523,6 +399,7 @@ class Character:
                 tools=active_tools,
                 tool_choice="auto"
             )
+
             response_message = response.choices[0].message
             # Ensure message content is a string, even if None, for add_dialogue_turn
             ai_message_content = response_message.content if response_message.content is not None else ""
@@ -540,11 +417,10 @@ class Character:
                     tool_result_content = ""
                     try:
                         args = json.loads(function_args_str)
-                        if function_name == "give_item_to_user":
+                        if function_name == "give_item_to_player":
                             item_name_to_give = args.get("item_name")
-                            reason_for_giving = args.get("reason", "No specific reason stated by AI.")
                             # rprint(Text(f"SYSTEM: AI ({self.name}) attempting to give '{item_name_to_give}'. Reason: {reason_for_giving}", style="yellow"))
-                            rprint(Text.assemble(Text("AI EVENT: ", style="dim yellow"), Text(f"{self.name} (AI) is attempting to give '{item_name_to_give}'. Reason: {reason_for_giving}", style="yellow")))
+                            rprint(Text.assemble(Text("AI EVENT: ", style="dim yellow"), Text(f"{self.name} (AI) is attempting to give '{item_name_to_give}'.", style="yellow")))
                             if not item_name_to_give:
                                 tool_result_content = f"Error: item_name not provided by {self.name}."
                             elif self.has_item(item_name_to_give): # has_item now works with string name
@@ -558,32 +434,7 @@ class Character:
                                 else:
                                     tool_result_content = f"Error: {self.name} tried to give '{item_name_to_give}' but failed to remove it internally or find the item object."
                             else:
-                                tool_result_content = f"{self.name} tried to give '{item_name_to_give}' (Reason: {reason_for_giving}) but does not possess it. Current items: {', '.join(item.name for item in self.items)}"
-                        elif function_name == "accept_item_offer":
-                            item_name_to_accept = args.get("item_name")
-                            reason_for_accepting = args.get("reason", "No specific reason stated by AI.")
-                            rprint(Text.assemble(Text("AI EVENT: ", style="dim yellow"), Text(f"{self.name} (AI) is attempting to accept offer for '{item_name_to_accept}'. Reason: {reason_for_accepting}", style="yellow")))
-
-                            if not self.active_offer:
-                                tool_result_content = f"Error: There is no active item offer from the player to accept."
-                            elif self.active_offer.get("item_name", "").lower() != item_name_to_accept.lower():
-                                tool_result_content = f"Error: The item you tried to accept ('{item_name_to_accept}') does not match the currently offered item ('{self.active_offer.get('item_name')}')."
-                            else:
-                                offered_item_object = self.active_offer.get("item_object")
-                                offered_by_name = self.active_offer.get("offered_by_name", "Player") # Default to Player if name not stored
-                                
-                                # Ensure player_object (the one who made the offer) still has the item
-                                # Note: player_object here is the game's player object, not just a name.
-                                if offered_item_object and player_object.has_item(offered_item_object):
-                                    if player_object.remove_item(offered_item_object): # This prints its own success message
-                                        self.add_item(offered_item_object) # This prints its own success message
-                                        tool_result_content = f"Successfully accepted and received '{item_name_to_accept}' from {offered_by_name}. You now possess it."
-                                        rprint(Text.assemble(Text("AI EVENT: ", style="dim bright_green"), Text(f"{self.name} accepted and received '{item_name_to_accept}' from {offered_by_name}.", style="bright_green")))
-                                        self.active_offer = None # Clear the active offer
-                                    else:
-                                        tool_result_content = f"Error: Failed to remove '{item_name_to_accept}' from {offered_by_name}'s inventory, even though they appeared to have it."
-                                else:
-                                    tool_result_content = f"Error: {offered_by_name} no longer seems to possess the offered item '{item_name_to_accept}'. Offer may be void."
+                                tool_result_content = f"{self.name} tried to give '{item_name_to_give}' but does not possess it. Current items: {', '.join(item.name for item in self.items)}"
                         else:
                             tool_result_content = f"Error: Unknown tool {function_name} called by {self.name}."
                     except json.JSONDecodeError:
@@ -595,6 +446,7 @@ class Character:
                 # Get the updated history for the final call
                 messages_for_final_call = self._prepare_llm_messages(current_location)
 
+                debug_llm_call("Character", f"Final response after tools for {self.name}", DEFAULT_LLM_MODEL)
                 final_response = litellm.completion(model=DEFAULT_LLM_MODEL, messages=messages_for_final_call)
                 ai_spoken_response = final_response.choices[0].message.content
 
@@ -624,39 +476,24 @@ class Character:
             rprint(Text(f"Error getting AI response for {self.name}: {e}", style="bold red"))
             return None
 
-    def get_ai_response_with_actions(self, player_object: 'Player', current_location: 'Location') -> tuple[str | None, dict]:
+    def get_ai_response_with_actions(self, player_object: 'Player', current_location: Location) -> tuple[str | None, dict]:
         """
-        Enhanced version of get_ai_response that uses AI action parsing instead of tool calls.
-        
-        Returns:
-            tuple: (spoken_response: str | None, action_results: dict)
+        Enhanced version that generates AI response and parses actions from natural language.
+        Returns (spoken_response, action_results_dict)
         """
         from .npc_action_parser import NPCActionParser
+        from .player import Player
         
-        # Handle standing requests first (like trade offers)
-        request_response = self.handle_standing_request(player_object, current_location)
-        if request_response:
-            # Request was handled, return the response
-            return request_response, {
-                'executed_actions': [],
-                'state_changes': {'request_handled': True},
-                'errors': [],
-                'classification': {'action_types': ['request_handled'], 'confidence': 1.0}
-            }
+        # Validate arguments
+        if not isinstance(player_object, Player):
+            raise ValueError("player_object must be a Player instance.")
+        if not isinstance(current_location, Location):
+            raise ValueError("current_location must be a Location instance.")
         
-        # Handle standing trade offers second
-        trade_response = self.handle_standing_trade_offer(player_object, current_location)
-        if trade_response:
-            # Trade was handled, return the response
-            return trade_response, {
-                'executed_actions': [],
-                'state_changes': {'trade_handled': True},
-                'errors': [],
-                'classification': {'action_types': ['trade_handled'], 'confidence': 1.0}
-            }
-        
-        # No standing requests or trades, generate normal dialogue
+        # Prepare messages for natural dialogue generation
         messages = self._prepare_llm_messages(current_location)
+        
+        debug_llm_call("Character", f"Natural dialogue with actions for {self.name}", DEFAULT_LLM_MODEL)
         
         try:
             # Generate response without tool calls - just natural dialogue
@@ -671,7 +508,7 @@ class Character:
             if not ai_response:
                 return None, {'executed_actions': [], 'state_changes': {}, 'errors': ['Empty AI response']}
             
-            # Parse the response for actions with debug mode disabled (we'll show debug info later)
+            # Parse the response for actions without debug mode (we handle debug at higher level)
             parser = NPCActionParser(debug_mode=False)
             context = {
                 'active_offer': getattr(self, 'active_offer', None),

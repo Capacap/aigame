@@ -5,7 +5,7 @@ import json # For potentially formatting parts of the prompt or if GM needs to h
 from .player import Player
 from .character import Character
 from .scenario import Scenario # Added import for Scenario type hint
-from .config import DEFAULT_LLM_MODEL
+from .config import DEFAULT_LLM_MODEL, debug_llm_call
 # Location might be needed if future GMs consider environment, but not for current victory condition
 # from .location import Location 
 
@@ -21,101 +21,136 @@ class GameMaster:
         pass
 
     def introduce_scenario(self, scenario: Scenario) -> str:
-        """Generates an introductory narration for the given scenario."""
+        """
+        Generates an engaging introduction for the scenario using AI.
+        Returns a narrative introduction string.
+        """
+        # Validate arguments
         if not isinstance(scenario, Scenario):
-            raise ValueError("Invalid scenario object provided to introduce_scenario.")
-        
-        # For now, a simple formatted introduction. This could be expanded.
-        # Using f-string for clarity and rich Text for potential future styling within the string.
-        intro_text = (
-            f"Welcome, adventurer, to \"{scenario.name}\"!\n\n"
-            f"{scenario.description}"
+            raise ValueError("scenario must be a Scenario instance.")
+
+        system_prompt = (
+            "You are a master storyteller and Game Master. Create an engaging, atmospheric introduction "
+            "for a text-based adventure scenario. The introduction should:\n"
+            "- Set the scene and mood\n"
+            "- Introduce the setting without being too verbose\n"
+            "- Create anticipation for the adventure ahead\n"
+            "- Be 2-3 sentences long\n"
+            "- Use vivid but concise language\n"
+            "- End with a sense of possibility or challenge\n\n"
+            "Write in second person ('You find yourself...') to immerse the player."
         )
-        return intro_text
+
+        user_prompt = (
+            f"Create an introduction for this scenario:\n"
+            f"Name: {scenario.name}\n"
+            f"Description: {scenario.description}\n"
+            f"Location: {scenario.location_name}\n"
+            f"Player Character: {scenario.player_character_name}\n"
+            f"NPC: {scenario.npc_character_name}"
+        )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        debug_llm_call("GameMaster", f"Scenario introduction for {scenario.name}", DEFAULT_LLM_MODEL)
+
+        try:
+            response = litellm.completion(
+                model=DEFAULT_LLM_MODEL,
+                messages=messages,
+                max_tokens=150,
+                temperature=0.7  # More creative for narrative
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            rprint(Text(f"Error during scenario introduction: {e}", style="dim yellow"))
+            return "Error generating scenario introduction."
 
     def analyze_and_update_disposition(self, npc: Character, player: Player, recent_events: str, scenario: Scenario = None) -> str:
         """
-        Analyzes recent events and updates the NPC's disposition accordingly.
-        The disposition will be oriented toward the scenario's victory condition when provided.
-        Returns the new disposition as a natural language prompt.
+        Analyzes recent events and updates the NPC's disposition if warranted.
+        Returns the (potentially updated) disposition.
         """
         # Validate arguments
         if not isinstance(npc, Character):
-            raise ValueError("Invalid NPC character object provided.")
+            raise ValueError("npc must be a Character instance.")
         if not isinstance(player, Player):
-            raise ValueError("Invalid player object provided.")
+            raise ValueError("player must be a Player instance.")
         if not isinstance(recent_events, str) or not recent_events.strip():
-            raise ValueError("Recent events must be a non-empty string.")
+            raise ValueError("recent_events must be a non-empty string.")
 
-        try:
-            # Get current state for context
-            current_disposition = npc.disposition
-            npc_items = ", ".join(item.name for item in npc.items) if npc.items else "None"
-            player_items = ", ".join(item.name for item in player.items) if player.items else "None"
-            
-            # Get recent conversation history for additional context
-            recent_history = npc.interaction_history.get_llm_history()
-            conversation_context = ""
-            if recent_history:
-                # Get last few exchanges for context
-                last_exchanges = recent_history[-4:] if len(recent_history) > 4 else recent_history
-                for entry in last_exchanges:
-                    role_name = player.name if entry["role"] == "user" else npc.name
-                    conversation_context += f"{role_name}: {entry.get('content', '')}\n"
-
-            # Build system message with scenario-specific guidance
-            if scenario:
-                system_message = (
-                    f"You are a Game Master AI analyzing how recent events should affect an NPC's disposition. "
-                    f"Your task is to determine if the NPC's current disposition should change based on what just happened. "
-                    f"IMPORTANT: The disposition should reflect how close the NPC is to fulfilling the scenario's victory condition. "
-                    f"Consider the NPC's personality, goals, and how they would realistically react to the recent events, "
-                    f"but focus the disposition on their likelihood to help achieve the victory condition.\n\n"
-                    f"SCENARIO CONTEXT:\n"
-                    f"Victory Condition: {scenario.victory_condition}\n"
-                    f"Scenario: {scenario.name} - {scenario.description}\n\n"
-                    f"The disposition should indicate the NPC's current stance toward the victory condition. "
-                    f"Examples for different scenarios:\n"
-                    f"- For a librarian guarding a book: 'reluctant but softening', 'firmly protective', 'considering the request', 'willing to share'\n"
-                    f"- For a merchant: 'interested in negotiating', 'skeptical of the offer', 'eager to make a deal', 'dismissive'\n"
-                    f"- For someone with information: 'secretive and cautious', 'beginning to trust', 'ready to reveal secrets'\n\n"
-                    f"Only change the disposition if the events warrant a meaningful shift toward or away from the victory condition. "
-                    f"Respond with a JSON object containing: "
-                    f"'should_update' (boolean), 'new_disposition' (string), and 'reasoning' (string)."
-                )
-            else:
-                # Fallback to original system message if no scenario provided
-                system_message = (
-                    f"You are a Game Master AI analyzing how recent events should affect an NPC's disposition. "
-                    f"Your task is to determine if the NPC's current disposition should change based on what just happened. "
-                    f"Consider the NPC's personality, goals, and how they would realistically react to the recent events. "
-                    f"The disposition should be a natural language description of the NPC's current emotional state, "
-                    f"attitude, or mindset that will guide their future responses. "
-                    f"Examples: 'suspicious and guarded', 'grateful and friendly', 'angry and hostile', "
-                    f"'curious but cautious', 'impressed and respectful', 'disappointed but hopeful'. "
-                    f"Only change the disposition if the events warrant a meaningful shift. "
-                    f"Respond with a JSON object containing: "
-                    f"'should_update' (boolean), 'new_disposition' (string), and 'reasoning' (string)."
-                )
-
-            user_prompt = (
-                f"NPC: {npc.name}\n"
-                f"Personality: {npc.personality}\n"
-                f"Goal: {npc.goal}\n"
-                f"Current Disposition: {current_disposition}\n"
-                f"NPC Items: {npc_items}\n"
-                f"Player Items: {player_items}\n\n"
-                f"Recent Events:\n{recent_events}\n\n"
-                f"Recent Conversation Context:\n{conversation_context}\n"
-                f"Based on the NPC's personality and the recent events, should their disposition change? "
-                f"If so, what should the new disposition be?"
+        # Build context for disposition analysis
+        player_items_str = ", ".join(item.name for item in player.items) if player.items else "None"
+        npc_items_str = ", ".join(item.name for item in npc.items) if npc.items else "None"
+        
+        # Enhanced system prompt with scenario context
+        if scenario:
+            system_prompt = (
+                f"You are an expert Game Master AI analyzing character disposition changes. "
+                f"Your task is to determine if recent events warrant updating an NPC's disposition "
+                f"based on their personality and the scenario's victory conditions.\n\n"
+                f"SCENARIO CONTEXT:\n"
+                f"- Scenario: {scenario.name}\n"
+                f"- Victory Condition: {scenario.victory_condition}\n"
+                f"- This means the disposition should reflect how likely the NPC is to help achieve this specific goal.\n\n"
+                f"CHARACTER ANALYSIS:\n"
+                f"- NPC: {npc.name}\n"
+                f"- Personality: {npc.personality}\n"
+                f"- Goal: {npc.goal}\n"
+                f"- Current Disposition: {npc.disposition}\n"
+                f"- Items: [{npc_items_str}]\n\n"
+                f"PLAYER CONTEXT:\n"
+                f"- Player: {player.name}\n"
+                f"- Items: [{player_items_str}]\n\n"
+                f"DISPOSITION GUIDELINES:\n"
+                f"- Disposition should reflect likelihood of helping with victory condition, not just general mood\n"
+                f"- For librarians: How likely to give access to restricted materials\n"
+                f"- For merchants: How favorable the trading terms might be\n"
+                f"- For information holders: How willing to share secrets or keys\n"
+                f"- Consider both emotional state AND practical willingness to cooperate\n\n"
+                f"Examples of scenario-relevant dispositions:\n"
+                f"- 'reluctantly considering the request' (moving toward cooperation)\n"
+                f"- 'firmly protective of the grimoire' (resistant to giving key items)\n"
+                f"- 'warming up to the customer' (merchant becoming more favorable)\n"
+                f"- 'suspicious of the stranger's motives' (less likely to help)\n\n"
+                f"Analyze if the recent events warrant a disposition change. "
+                f"Focus on how the events affect the NPC's willingness to help achieve the victory condition. "
+                f"Respond with JSON: {{'should_update': boolean, 'new_disposition': 'string', 'reasoning': 'explanation'}}"
+            )
+        else:
+            # Fallback to original behavior if no scenario provided
+            system_prompt = (
+                f"You are an expert Game Master AI analyzing character disposition changes. "
+                f"Your task is to determine if recent events warrant updating an NPC's disposition "
+                f"based on their personality and the interaction context.\n\n"
+                f"CHARACTER ANALYSIS:\n"
+                f"- NPC: {npc.name}\n"
+                f"- Personality: {npc.personality}\n"
+                f"- Goal: {npc.goal}\n"
+                f"- Current Disposition: {npc.disposition}\n"
+                f"- Items: [{npc_items_str}]\n\n"
+                f"PLAYER CONTEXT:\n"
+                f"- Player: {player.name}\n"
+                f"- Items: [{player_items_str}]\n\n"
+                f"Analyze if the recent events warrant a disposition change based on the character's "
+                f"personality and how they would realistically react. Consider emotional responses, "
+                f"trust changes, and relationship dynamics. "
+                f"Respond with JSON: {{'should_update': boolean, 'new_disposition': 'string', 'reasoning': 'explanation'}}"
             )
 
-            messages = [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_prompt}
-            ]
+        user_prompt = f"Recent events to analyze: {recent_events}"
 
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        debug_llm_call("GameMaster", f"Disposition analysis for {npc.name}", DEFAULT_LLM_MODEL)
+
+        try:
             response = litellm.completion(
                 model=DEFAULT_LLM_MODEL,
                 messages=messages,
@@ -160,31 +195,71 @@ class GameMaster:
             rprint(Text(f"Error during disposition analysis: {e}", style="dim yellow"))
             return npc.disposition
 
-    def provide_epilogue(self, scenario: Scenario, player: Player, npc: Character, game_outcome: str) -> str:
-        """Generates a concluding narration for the scenario based on the outcome."""
+    def provide_epilogue(self, scenario: Scenario, player: Player, npc: Character, ending_type: str) -> str:
+        """
+        Generates an epilogue for the scenario based on how it ended.
+        Returns a narrative epilogue string.
+        """
+        # Validate arguments
         if not isinstance(scenario, Scenario):
-            raise ValueError("Invalid scenario object provided to provide_epilogue.")
+            raise ValueError("scenario must be a Scenario instance.")
         if not isinstance(player, Player):
-            raise ValueError("Invalid player object provided to provide_epilogue.")
+            raise ValueError("player must be a Player instance.")
         if not isinstance(npc, Character):
-            raise ValueError("Invalid NPC object provided to provide_epilogue.")
-        if not isinstance(game_outcome, str) or not game_outcome:
-            raise ValueError("Game outcome must be a non-empty string.")
+            raise ValueError("npc must be a Character instance.")
+        if ending_type not in ["VICTORY", "PLAYER_QUIT"]:
+            raise ValueError("ending_type must be 'VICTORY' or 'PLAYER_QUIT'.")
 
-        epilogue_text = f"Thus concludes \"{scenario.name}\".\n\n"
+        player_items_str = ", ".join(item.name for item in player.items) if player.items else "None"
+        npc_items_str = ", ".join(item.name for item in npc.items) if npc.items else "None"
 
-        if game_outcome == "VICTORY":
-            epilogue_text += f"Through skill and determination, {player.name} successfully achieved the objective! "
-            epilogue_text += f"{npc.name} is now {npc.disposition}. " 
-            epilogue_text += "\nA chapter closes, but the story continues..."
-        elif game_outcome == "PLAYER_QUIT":
-            epilogue_text += f"{player.name} decided to walk away from this particular path. "
-            epilogue_text += f"The threads of fate remain untangled, and {npc.name} is left to ponder what might have been, their disposition {npc.disposition}. "
-            epilogue_text += "Perhaps another time, another place?"
-        else:
-            epilogue_text += "The story ends, but its echoes linger..."
-        
-        return epilogue_text
+        system_prompt = (
+            "You are a master storyteller providing an epilogue for a completed adventure. "
+            "Create a satisfying conclusion that:\n"
+            "- Reflects the outcome of the adventure\n"
+            "- Acknowledges the character relationships that developed\n"
+            "- Provides closure to the story\n"
+            "- Is 2-3 sentences long\n"
+            "- Matches the tone of the ending (triumphant for victory, reflective for quitting)\n\n"
+            "Write in a narrative style that wraps up the adventure."
+        )
+
+        if ending_type == "VICTORY":
+            user_prompt = (
+                f"Create a victory epilogue for:\n"
+                f"Scenario: {scenario.name}\n"
+                f"Player: {player.name} (final items: {player_items_str})\n"
+                f"NPC: {npc.name} (final disposition: {npc.disposition}, final items: {npc_items_str})\n"
+                f"Victory Condition: {scenario.victory_condition}\n\n"
+                f"The player successfully achieved their goal. Celebrate their success and the relationship they built."
+            )
+        else:  # PLAYER_QUIT
+            user_prompt = (
+                f"Create a reflective epilogue for:\n"
+                f"Scenario: {scenario.name}\n"
+                f"Player: {player.name} (final items: {player_items_str})\n"
+                f"NPC: {npc.name} (final disposition: {npc.disposition}, final items: {npc_items_str})\n\n"
+                f"The player chose to end their adventure early. Reflect on the journey and leave the door open for future possibilities."
+            )
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ]
+
+        debug_llm_call("GameMaster", f"Epilogue generation ({ending_type})", DEFAULT_LLM_MODEL)
+
+        try:
+            response = litellm.completion(
+                model=DEFAULT_LLM_MODEL,
+                messages=messages,
+                max_tokens=120,
+                temperature=0.7  # Creative for narrative
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            rprint(Text(f"Error during epilogue generation: {e}", style="dim yellow"))
+            return "Error generating epilogue."
 
     def _format_state_for_llm(self, player: Player, npc: Character, victory_condition: str) -> str:
         player_items_str = ", ".join(item.name for item in player.items) if player.items else "None"
@@ -219,6 +294,8 @@ class GameMaster:
             {"role": "system", "content": system_message},
             {"role": "user", "content": state_prompt + "\n\nEvaluate this victory condition based strictly on the current game state. Provide your response as a JSON object."}
         ]
+
+        debug_llm_call("GameMaster", "Victory condition evaluation", DEFAULT_LLM_MODEL)
 
         try:
             response = litellm.completion(
@@ -258,49 +335,45 @@ class GameMaster:
         trade_message: str
     ) -> tuple[bool, str, str, str]:
         """
-        Parses a natural language trade proposal to extract item names.
-        Returns a tuple: (is_valid_trade: bool, player_item_name: str, npc_item_name: str, reason: str)
-        Empty strings for item names and reason if is_valid_trade is False.
+        Uses an LLM to parse a trade proposal message and extract the items involved.
+        Returns (is_valid_trade, player_item_name, npc_item_name, reason)
         """
+        # Validate arguments
         if not isinstance(player, Player):
-            raise ValueError("Invalid player object provided.")
+            raise ValueError("player must be a Player instance.")
         if not isinstance(npc, Character):
-            raise ValueError("Invalid NPC object provided.")
+            raise ValueError("npc must be a Character instance.")
         if not isinstance(trade_message, str) or not trade_message.strip():
-            return False, "", "", "Trade message cannot be empty."
+            raise ValueError("trade_message must be a non-empty string.")
 
-        # Get available items for context
-        player_items_str = ", ".join(f"'{item.name}'" for item in player.items) if player.items else "None"
-        npc_items_str = ", ".join(f"'{item.name}'" for item in npc.items) if npc.items else "None"
+        player_items_str = ", ".join(item.name for item in player.items) if player.items else "None"
+        npc_items_str = ", ".join(item.name for item in npc.items) if npc.items else "None"
 
         system_prompt = (
-            "You are a Game Master AI specialized in parsing trade proposals. Your task is to analyze "
-            "a player's natural language trade message and extract the specific item names being proposed for trade. "
-            "The player wants to trade one of their items for one of the NPC's items. "
-            "Look for phrases like 'I offer my X for your Y', 'trade my X for your Y', 'exchange my X for your Y', etc. "
-            "Extract the EXACT item names as they appear in the available inventories. "
-            "Be flexible with case sensitivity and partial matches - if the player says 'bag of coins' and the inventory has 'Bag of Coins', that's a match. "
-            "Similarly, 'cypher' should match 'translation cypher', 'amulet' should match 'Ancient Amulet', 'key' should match 'Echo Chamber Key', etc. "
-            "Use your best judgment to match player descriptions to actual item names, but be conservative - only match if you're confident. "
-            "If the message doesn't clearly propose a trade between specific items, or if you can't confidently match the mentioned items "
-            "to the available inventories, mark it as invalid. "
-            "Respond ONLY with a JSON object with four keys: "
-            "'is_valid_trade' (boolean), 'player_item_name' (string, exact name from player inventory), "
-            "'npc_item_name' (string, exact name from NPC inventory), and 'reason' (string, explanation)."
+            f"You are a trade proposal parser. Analyze the player's message to determine if it contains "
+            f"a valid trade proposal (offering one of their items for one of the NPC's items).\n\n"
+            f"Available items:\n"
+            f"- Player has: [{player_items_str}]\n"
+            f"- NPC has: [{npc_items_str}]\n\n"
+            f"A valid trade proposal must:\n"
+            f"1. Clearly indicate the player wants to trade/exchange items\n"
+            f"2. Specify one item the player is offering (must be from their inventory)\n"
+            f"3. Specify one item they want from the NPC (must be from NPC's inventory)\n\n"
+            f"Respond with JSON containing:\n"
+            f"- 'is_valid_trade': boolean (true if this is a valid trade proposal)\n"
+            f"- 'player_item_name': string (exact name of item player is offering, or empty if invalid)\n"
+            f"- 'npc_item_name': string (exact name of item player wants from NPC, or empty if invalid)\n"
+            f"- 'reason': string (brief explanation of your decision)"
         )
 
-        user_prompt = (
-            f"Player ({player.name}) available items: [{player_items_str}]\n"
-            f"NPC ({npc.name}) available items: [{npc_items_str}]\n\n"
-            f"Player's trade message: \"{trade_message}\"\n\n"
-            "Parse this message to extract the trade proposal. What item is the player offering, "
-            "and what item do they want in return? Provide your response as a JSON object."
-        )
+        user_prompt = f"Player message to analyze: \"{trade_message}\""
 
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
+
+        debug_llm_call("GameMaster", "Trade proposal parsing", DEFAULT_LLM_MODEL)
 
         try:
             response = litellm.completion(

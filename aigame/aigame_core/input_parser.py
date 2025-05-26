@@ -4,7 +4,7 @@ import litellm
 from typing import Dict, Any, Optional
 from rich import print as rprint
 from rich.text import Text
-from .config import DEFAULT_LLM_MODEL
+from .config import DEFAULT_LLM_MODEL, debug_llm_call
 
 from .player import Player
 from .character import Character
@@ -195,60 +195,60 @@ class InputParser:
         current_location: Location
     ) -> Dict[str, Any]:
         """
-        First step: Classify the type of input using AI.
+        Uses AI to classify the type of player input.
+        Returns classification result with action_type, confidence, and reasoning.
         """
-        # Get context for classification
+        
+        # Build context for classification
         player_items = [item.name for item in player.items]
         npc_items = [item.name for item in npc.items]
-        has_active_trade = bool(npc.active_trade_proposal)
+        
+        # Check for active proposals that might affect classification
+        has_active_trade_proposal = bool(npc.active_trade_proposal)
         
         system_prompt = (
-            "You are an AI that classifies player input in a text adventure game. "
-            "Analyze the player's message and determine what type of action they want to perform. "
-            "Focus on the player's intent, not game state validation. "
-            "The possible action types are:\n"
-            "- 'dialogue': Player wants to talk/speak to the NPC (greetings, questions, statements, etc.)\n"
-            "- 'give_item': Player wants to offer/give an item to the NPC\n"
-            "- 'trade_proposal': Player wants to propose trading items (offering one item for another)\n"
-            "- 'request_item': Player wants to ask for a specific item without offering anything in return\n"
-            "- 'accept_trade': Player wants to accept a trade or counter-proposal\n"
-            "- 'decline_trade': Player wants to decline a trade or counter-proposal\n"
-            "- 'unknown': Input doesn't clearly match any category\n\n"
-            "Consider context clues like:\n"
-            "- Words like 'say', 'tell', 'ask', 'hello' suggest dialogue\n"
-            "- Words like 'give', 'offer', 'take this', 'here' suggest give_item\n"
-            "- Words like 'trade', 'exchange', 'swap', 'for your' suggest trade_proposal\n"
-            "- Words like 'can I have', 'please give me', 'I need', 'may I borrow' suggest request_item\n"
-            "- Words like 'accept', 'yes', 'deal', 'agreed', 'okay', 'sure' suggest accept_trade\n"
-            "- Words like 'decline', 'no', 'refuse', 'reject' suggest decline_trade\n\n"
-            "Be flexible - players might phrase things naturally. For example:\n"
-            "- 'Here, take my sword' = give_item\n"
-            "- 'I'll trade my coins for your key' = trade_proposal\n"
-            "- 'Can I have your map?' = request_item\n"
-            "- 'I really need that potion' = request_item\n"
-            "- 'Hello there, how are you?' = dialogue\n"
-            "- 'Yes please' = accept_trade (if it sounds like agreement)\n"
-            "- 'That sounds good, I accept' = accept_trade\n"
-            "- 'No thanks' = decline_trade\n\n"
-            "Respond ONLY with a JSON object containing:\n"
-            "- 'action_type': one of the types listed above\n"
-            "- 'confidence': number from 0.0 to 1.0 indicating confidence in classification\n"
-            "- 'reasoning': brief explanation of why you chose this classification"
+            "You are an expert natural language classifier for a text-based adventure game. "
+            "Your task is to classify player input into specific action types.\n\n"
+            "AVAILABLE ACTION TYPES:\n"
+            "- 'dialogue': General conversation, questions, comments, or statements\n"
+            "- 'give_item': Player wants to give/offer one of their items to the NPC\n"
+            "- 'trade_proposal': Player proposes trading one of their items for one of NPC's items\n"
+            "- 'request_item': Player asks for or wants one of the NPC's items (without offering anything)\n"
+            "- 'accept_trade': Player accepts a trade proposal (only valid if there's an active proposal)\n"
+            "- 'decline_trade': Player declines a trade proposal (only valid if there's an active proposal)\n"
+            "- 'quit': Player wants to quit/exit the game\n"
+            "- 'help': Player wants help or instructions\n"
+            "- 'unknown': Input doesn't fit any category or is unclear\n\n"
+            "CLASSIFICATION GUIDELINES:\n"
+            "- Be generous with 'dialogue' - when in doubt, classify as dialogue\n"
+            "- 'give_item' requires clear intent to give/offer something\n"
+            "- 'trade_proposal' requires mentioning both what player offers AND what they want\n"
+            "- 'request_item' is asking for something without offering anything in return\n"
+            "- 'accept_trade'/'decline_trade' only if there's an active trade proposal\n"
+            "- Consider context and be flexible with natural language variations\n\n"
+            "Respond with JSON containing:\n"
+            "- 'action_type': one of the types above\n"
+            "- 'confidence': float between 0.0 and 1.0\n"
+            "- 'reasoning': brief explanation of your classification"
         )
         
         user_prompt = (
-            f"Game Context:\n"
-            f"- Player ({player.name}) has items: {player_items if player_items else ['None']}\n"
-            f"- NPC ({npc.name}) has items: {npc_items if npc_items else ['None']}\n"
-            f"- Location: {current_location.name}\n\n"
-            f"Player input to classify: \"{player_input}\"\n\n"
-            "What type of action does the player want to perform?"
+            f"GAME CONTEXT:\n"
+            f"Player items: {player_items}\n"
+            f"NPC items: {npc_items}\n"
+            f"Active trade proposal: {has_active_trade_proposal}\n"
+            f"Location: {current_location.name}\n\n"
+            f"PLAYER INPUT TO CLASSIFY:\n"
+            f'"{player_input}"\n\n'
+            f"Classify this input into one of the action types."
         )
         
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
+        
+        debug_llm_call("InputParser", "Input classification", DEFAULT_LLM_MODEL)
         
         try:
             response = litellm.completion(
@@ -300,23 +300,30 @@ class InputParser:
         classification: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Extract parameters for give_item action."""
+        
+        player_items = [item.name for item in player.items]
+        
         system_prompt = (
-            "You are extracting the item name from a player's give/offer message. "
-            "The player wants to give an item to an NPC. Look for the specific item they mention. "
-            "Match the mentioned item to the player's actual inventory, being flexible with naming "
-            "(e.g., 'sword' might match 'Iron Sword', 'coins' might match 'Bag of Coins'). "
-            "Respond ONLY with a JSON object containing:\n"
-            "- 'item_name': exact name from player's inventory, or empty string if not found\n"
-            "- 'confidence': number from 0.0 to 1.0\n"
+            "You are an item extraction specialist. Extract the specific item name that the player "
+            "wants to give/offer to the NPC from their natural language input.\n\n"
+            "GUIDELINES:\n"
+            "- Extract the EXACT item name as it appears in the player's inventory\n"
+            "- Be flexible with partial matches (e.g., 'coins' matches 'Bag of Coins')\n"
+            "- If multiple items could match, choose the most likely one\n"
+            "- If no clear item can be identified, return empty string\n\n"
+            "Respond with JSON containing:\n"
+            "- 'item_name': exact name from inventory or empty string\n"
+            "- 'confidence': float between 0.0 and 1.0\n"
             "- 'reasoning': brief explanation"
         )
         
-        player_items = [item.name for item in player.items]
         user_prompt = (
-            f"Player's inventory: {player_items}\n"
-            f"Player's message: \"{player_input}\"\n\n"
-            "What item is the player trying to give?"
+            f"Player inventory: {player_items}\n"
+            f"Player input: \"{player_input}\"\n\n"
+            f"What item does the player want to give?"
         )
+        
+        debug_llm_call("InputParser", "Give item extraction", DEFAULT_LLM_MODEL)
         
         try:
             response = litellm.completion(
@@ -377,27 +384,34 @@ class InputParser:
         classification: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Extract parameters for trade_proposal action."""
-        system_prompt = (
-            "You are extracting trade details from a player's trade proposal message. "
-            "The player wants to trade one of their items for one of the NPC's items. "
-            "Look for what the player is offering and what they want in return. "
-            "Match mentioned items to actual inventories, being flexible with naming. "
-            "Respond ONLY with a JSON object containing:\n"
-            "- 'player_item': exact name from player's inventory\n"
-            "- 'npc_item': exact name from NPC's inventory\n"
-            "- 'confidence': number from 0.0 to 1.0\n"
-            "- 'reasoning': brief explanation"
-        )
         
         player_items = [item.name for item in player.items]
         npc_items = [item.name for item in npc.items]
         
-        user_prompt = (
-            f"Player's inventory: {player_items}\n"
-            f"NPC's inventory: {npc_items}\n"
-            f"Player's trade message: \"{player_input}\"\n\n"
-            "What trade is the player proposing? (What are they offering and what do they want?)"
+        system_prompt = (
+            "You are a trade proposal analyzer. Extract the two items involved in a trade proposal: "
+            "what the player is offering and what they want from the NPC.\n\n"
+            "GUIDELINES:\n"
+            "- Extract EXACT item names as they appear in inventories\n"
+            "- Be flexible with partial matches\n"
+            "- Player item must be from player inventory\n"
+            "- NPC item must be from NPC inventory\n"
+            "- If either item can't be clearly identified, return empty strings\n\n"
+            "Respond with JSON containing:\n"
+            "- 'player_item': exact name from player inventory\n"
+            "- 'npc_item': exact name from NPC inventory\n"
+            "- 'confidence': float between 0.0 and 1.0\n"
+            "- 'reasoning': brief explanation"
         )
+        
+        user_prompt = (
+            f"Player inventory: {player_items}\n"
+            f"NPC inventory: {npc_items}\n"
+            f"Player input: \"{player_input}\"\n\n"
+            f"What trade is the player proposing?"
+        )
+        
+        debug_llm_call("InputParser", "Trade proposal extraction", DEFAULT_LLM_MODEL)
         
         try:
             response = litellm.completion(
@@ -468,24 +482,30 @@ class InputParser:
         classification: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Extract parameters for request_item action."""
+        
+        npc_items = [item.name for item in npc.items]
+        
         system_prompt = (
-            "You are extracting the item name from a player's request message. "
-            "The player wants to ask for a specific item from the NPC without offering anything in return. "
-            "Look for the specific item they mention. "
-            "Match the mentioned item to the NPC's actual inventory, being flexible with naming "
-            "(e.g., 'sword' might match 'Iron Sword', 'coins' might match 'Bag of Coins'). "
-            "Respond ONLY with a JSON object containing:\n"
-            "- 'item_name': exact name from NPC's inventory, or empty string if not found\n"
-            "- 'confidence': number from 0.0 to 1.0\n"
+            "You are an item request analyzer. Extract the specific item that the player "
+            "is asking for from the NPC.\n\n"
+            "GUIDELINES:\n"
+            "- Extract the EXACT item name as it appears in the NPC's inventory\n"
+            "- Be flexible with partial matches\n"
+            "- If multiple items could match, choose the most likely one\n"
+            "- If no clear item can be identified, return empty string\n\n"
+            "Respond with JSON containing:\n"
+            "- 'item_name': exact name from NPC inventory or empty string\n"
+            "- 'confidence': float between 0.0 and 1.0\n"
             "- 'reasoning': brief explanation"
         )
         
-        npc_items = [item.name for item in npc.items]
         user_prompt = (
-            f"NPC's inventory: {npc_items}\n"
-            f"Player's request message: \"{player_input}\"\n\n"
-            "What item is the player asking for from the NPC?"
+            f"NPC inventory: {npc_items}\n"
+            f"Player input: \"{player_input}\"\n\n"
+            f"What item is the player asking for?"
         )
+        
+        debug_llm_call("InputParser", "Request item extraction", DEFAULT_LLM_MODEL)
         
         try:
             response = litellm.completion(

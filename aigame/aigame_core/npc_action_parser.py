@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Optional
 from rich import print as rprint
 from rich.text import Text
 from rich.panel import Panel
-from .config import DEFAULT_LLM_MODEL
+from .config import DEFAULT_LLM_MODEL, debug_llm_call
 
 from .player import Player
 from .character import Character
@@ -17,82 +17,56 @@ class NPCActionParser:
     This allows NPCs to perform actions through natural dialogue rather than explicit tool calls.
     """
     
-    def __init__(self, debug_mode: bool = True):
-        self.debug_mode = debug_mode
-    
-    def _debug_print(self, message: str, style: str = "dim cyan"):
-        """Print debug information if debug mode is enabled."""
-        if self.debug_mode:
-            rprint(Text(f"[NPC PARSER DEBUG] {message}", style=style))
+    def __init__(self, debug_mode: bool = False):
+        # Keep the parameter for backward compatibility but don't use it
+        pass
     
     def parse_npc_response(
         self, 
         npc_response: str, 
         npc: Character, 
-        player: Player,
-        context: Dict[str, Any] = None
+        player: Player, 
+        context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Parses an NPC's natural language response to extract implied actions.
+        Parses an NPC's natural language response to extract any actions they want to perform.
         
-        Args:
-            npc_response: The NPC's spoken response
-            npc: The NPC character object
-            player: The player object
-            context: Additional context (active offers, trades, etc.)
-        
-        Returns:
-            Dictionary with:
-            - 'actions': List of action dictionaries
-            - 'success': bool indicating if parsing was successful
-            - 'error_message': str with error details if parsing failed
+        Returns a dictionary with:
+        - 'success': bool indicating if parsing was successful
+        - 'actions': list of action dictionaries
+        - 'error_message': str with error details if parsing failed
         """
         if not isinstance(npc_response, str) or not npc_response.strip():
             return {
-                'actions': [],
-                'success': True,
-                'error_message': ''
-            }
-        
-        context = context or {}
-        
-        # Extract actions using AI
-        extracted_actions = self._extract_actions(npc_response, npc, player, context)
-        
-        if not extracted_actions['success']:
-            if self.debug_mode:
-                rprint(Text(f"NPC action parsing failed: {extracted_actions.get('error_message', 'Unknown error')}", style="dim red"))
-            return {
-                'actions': [],
                 'success': False,
-                'error_message': extracted_actions.get('error_message', 'Failed to parse NPC actions')
+                'actions': [],
+                'error_message': 'NPC response cannot be empty'
             }
         
-        # Validate and filter actions
-        valid_actions = []
-        for action in extracted_actions['actions']:
-            validation_result = self._validate_action(action, npc, player, context)
-            if validation_result['valid']:
-                valid_actions.append(action)
-            else:
-                rprint(Text(f"Invalid NPC action filtered out: {validation_result['reason']}", style="dim yellow"))
+        # Extract actions from the response
+        extraction_result = self._extract_actions(npc_response, npc, player, context)
         
-        # Show classification result like player input (always show, regardless of action type)
-        if self.debug_mode and valid_actions:
-            action_types = [action.get('type', 'unknown') for action in valid_actions]
-            confidence = extracted_actions.get('confidence', 0.0)
-            # Remove duplicate classification messages - they're handled in game_loop.py
-            # if action_types[0] == 'dialogue_only':
-            #     rprint(Text(f"NPC response classified as: dialogue_only (confidence: {confidence:.2f})", style="dim magenta"))
-            # else:
-            #     rprint(Text(f"NPC actions detected: {action_types} (confidence: {confidence:.2f})", style="dim magenta"))
+        if not extraction_result['success']:
+            return {
+                'success': False,
+                'actions': [],
+                'error_message': extraction_result['error_message']
+            }
+        
+        actions = extraction_result['actions']
+        confidence = extraction_result.get('confidence', 0.0)
+        
+        # Validate actions
+        validated_actions = []
+        for action in actions:
+            if self._validate_action(action, npc, player, context):
+                validated_actions.append(action)
         
         return {
-            'actions': valid_actions,
             'success': True,
-            'error_message': '',
-            'confidence': extracted_actions.get('confidence', 0.0),
-            'action_types': [action.get('type', 'unknown') for action in valid_actions] if valid_actions else ['dialogue_only']
+            'actions': validated_actions,
+            'confidence': confidence,
+            'error_message': ''
         }
     
     def _extract_actions(
@@ -103,70 +77,65 @@ class NPCActionParser:
         context: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Use AI to extract actions from NPC's natural language response.
+        Uses AI to extract actions from the NPC's natural language response.
         """
-        # Prepare context information
+        
+        # Build context for action extraction
         npc_items = [item.name for item in npc.items]
         player_items = [item.name for item in player.items]
+        
+        # Check for active proposals
         active_offer = context.get('active_offer')
-        active_trade = context.get('active_trade_proposal')
+        active_trade_proposal = context.get('active_trade_proposal')
         active_request = context.get('active_request')
         
         system_prompt = (
-            "You are an AI that extracts actions from NPC dialogue in a text adventure game. "
-            "Analyze the NPC's spoken response and identify any actions they are implying or performing. "
-            "Focus on concrete actions that affect the game state, not just emotional expressions. "
-            "Return a JSON object with 'actions' (list) and 'confidence' (0.0-1.0). "
-            "Each action should have 'type' and 'parameters'. "
-            "Action types: give_item, accept_offer, decline_offer, trade_accept, trade_decline, trade_counter, accept_request, decline_request, dialogue_only. "
-            "For give_item: include 'item_name'. "
-            "For trade_counter: include 'player_item' and 'npc_item'. "
-            "For accept_request: include 'item_name' (item being given to fulfill request). "
-            "For decline_request: no additional parameters needed. "
-            "If no concrete actions are detected, return dialogue_only. "
-            "Examples: "
-            "'Here, take this ring' -> give_item with item_name='ring' "
-            "'I accept your offer' -> accept_offer "
-            "'I decline' -> decline_offer "
-            "'How about my sword for your shield?' -> trade_counter "
-            "'Sure, you can have it' -> accept_request "
-            "'No, I need that myself' -> decline_request "
-            "'Hello there' -> dialogue_only"
+            "You are an expert action extractor for NPCs in a text adventure game. "
+            "Analyze the NPC's natural language response and identify any actions they want to perform.\n\n"
+            "AVAILABLE ACTION TYPES:\n"
+            "- 'give_item': NPC wants to give an item to the player\n"
+            "- 'accept_offer': NPC accepts an item offer from the player\n"
+            "- 'decline_offer': NPC declines an item offer from the player\n"
+            "- 'accept_trade': NPC accepts a trade proposal\n"
+            "- 'decline_trade': NPC declines a trade proposal\n"
+            "- 'counter_trade': NPC proposes a different trade\n"
+            "- 'dialogue_only': NPC is only speaking, no actions\n\n"
+            "EXTRACTION GUIDELINES:\n"
+            "- Look for explicit action words and intentions\n"
+            "- Consider the context of active offers/trades\n"
+            "- Be conservative - only extract clear actions\n"
+            "- Most responses will be 'dialogue_only'\n"
+            "- Multiple actions are possible but rare\n\n"
+            "For each action, extract relevant parameters:\n"
+            "- give_item: {'item_name': 'exact item name'}\n"
+            "- accept_offer: {'item_name': 'item being accepted'}\n"
+            "- accept_trade: {'player_item': 'item from player', 'npc_item': 'item from npc'}\n"
+            "- counter_trade: {'player_item': 'what npc wants', 'npc_item': 'what npc offers'}\n\n"
+            "Respond with JSON containing:\n"
+            "- 'actions': list of action objects with 'type' and 'parameters'\n"
+            "- 'confidence': float between 0.0 and 1.0\n"
+            "- 'reasoning': brief explanation of extracted actions"
         )
         
-        # Build context description
-        context_desc = f"NPC ({npc.name}) inventory: {npc_items if npc_items else ['None']}\n"
-        context_desc += f"Player ({player.name}) inventory: {player_items if player_items else ['None']}\n"
-        
-        if active_offer:
-            offered_item = active_offer.get('item_name', 'unknown item')
-            context_desc += f"Active offer: Player offered '{offered_item}' to NPC\n"
-        else:
-            context_desc += "Active offer: None\n"
-        
-        if active_trade:
-            player_item = active_trade.get('player_item_name', 'unknown')
-            npc_item = active_trade.get('npc_item_name', 'unknown')
-            context_desc += f"Active trade proposal: Player's '{player_item}' for NPC's '{npc_item}'\n"
-        else:
-            context_desc += "Active trade proposal: None\n"
-        
-        if active_request:
-            requested_item = active_request.get('item_name', 'unknown item')
-            context_desc += f"Active request: Player asked for '{requested_item}' from NPC\n"
-        else:
-            context_desc += "Active request: None\n"
-        
         user_prompt = (
-            f"Game Context:\n{context_desc}\n"
-            f"NPC's response: \"{npc_response}\"\n\n"
-            "What actions is the NPC performing through this dialogue?"
+            f"GAME CONTEXT:\n"
+            f"NPC: {npc.name}\n"
+            f"NPC items: {npc_items}\n"
+            f"Player items: {player_items}\n"
+            f"Active offer: {active_offer is not None}\n"
+            f"Active trade proposal: {active_trade_proposal is not None}\n"
+            f"Active request: {active_request is not None}\n\n"
+            f"NPC RESPONSE TO ANALYZE:\n"
+            f'"{npc_response}"\n\n'
+            f"What actions (if any) does the NPC want to perform?"
         )
         
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
+        
+        debug_llm_call("NPCActionParser", f"Action extraction for {npc.name}", DEFAULT_LLM_MODEL)
         
         try:
             response = litellm.completion(
@@ -225,7 +194,7 @@ class NPCActionParser:
         npc: Character, 
         player: Player, 
         context: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> bool:
         """
         Validate that an extracted action is actually possible given the current game state.
         """
@@ -235,72 +204,72 @@ class NPCActionParser:
         if action_type == 'give_item':
             item_name = parameters.get('item_name', '')
             if not item_name:
-                return {'valid': False, 'reason': 'give_item action missing item_name'}
+                return False
             if not npc.has_item(item_name):
-                return {'valid': False, 'reason': f"NPC doesn't have '{item_name}' to give"}
-            return {'valid': True, 'reason': ''}
+                return False
+            return True
         
         elif action_type == 'accept_offer':
             active_offer = context.get('active_offer')
             if not active_offer:
-                return {'valid': False, 'reason': 'No active offer to accept'}
+                return False
             offered_item = active_offer.get('item_name', '')
             if not player.has_item(offered_item):
-                return {'valid': False, 'reason': f"Player no longer has '{offered_item}' to offer"}
-            return {'valid': True, 'reason': ''}
+                return False
+            return True
         
         elif action_type == 'decline_offer':
             active_offer = context.get('active_offer')
             if not active_offer:
-                return {'valid': False, 'reason': 'No active offer to decline'}
-            return {'valid': True, 'reason': ''}
+                return False
+            return True
         
         elif action_type == 'trade_accept':
             active_trade = context.get('active_trade_proposal')
             if not active_trade:
-                return {'valid': False, 'reason': 'No active trade to accept'}
+                return False
             # Verify both parties still have the items
             player_item = active_trade.get('player_item_object')
             npc_item = active_trade.get('npc_item_object')
             if not player.has_item(player_item):
-                return {'valid': False, 'reason': 'Player no longer has trade item'}
+                return False
             if not npc.has_item(npc_item):
-                return {'valid': False, 'reason': 'NPC no longer has trade item'}
-            return {'valid': True, 'reason': ''}
+                return False
+            return True
         
         elif action_type == 'trade_decline':
             active_trade = context.get('active_trade_proposal')
             if not active_trade:
-                return {'valid': False, 'reason': 'No active trade to decline'}
-            return {'valid': True, 'reason': ''}
+                return False
+            return True
         
         elif action_type == 'trade_counter':
             player_item = parameters.get('player_item', '')
             npc_item = parameters.get('npc_item', '')
             if not player_item or not npc_item:
-                return {'valid': False, 'reason': 'trade_counter missing item names'}
+                return False
             if not player.has_item(player_item):
-                return {'valid': False, 'reason': f"Player doesn't have '{player_item}' for counter-trade"}
+                return False
             if not npc.has_item(npc_item):
-                return {'valid': False, 'reason': f"NPC doesn't have '{npc_item}' for counter-trade"}
-            return {'valid': True, 'reason': ''}
+                return False
+            return True
         
         elif action_type == 'accept_request':
             item_name = parameters.get('item_name', '')
             if not item_name:
-                return {'valid': False, 'reason': 'accept_request action missing item_name'}
+                return False
             if not npc.has_item(item_name):
-                return {'valid': False, 'reason': f"NPC doesn't have '{item_name}' to give"}
-            return {'valid': True, 'reason': ''}
+                return False
+            return True
         
         elif action_type == 'decline_request':
-            return {'valid': True, 'reason': ''}
+            return True
         
         elif action_type == 'dialogue_only':
-            return {'valid': True, 'reason': ''}
+            return True
         
         else:
-            return {'valid': False, 'reason': f'Unknown action type: {action_type}'}
+            return False
     
     def execute_actions(
         self, 

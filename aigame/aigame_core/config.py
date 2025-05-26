@@ -13,4 +13,15 @@ DEFAULT_LLM_MODEL = "openai/gpt-4.1-mini"
 
 # Game Configuration
 MAX_INTERACTION_HISTORY = 256  # Maximum number of conversation turns to keep
-DEBUG_MODE = False  # Set to True to enable debug output 
+
+# Debug Configuration
+LLM_DEBUG_MODE = True  # Set to True to enable LLM invocation tracking
+
+# Debug utility function
+def debug_llm_call(component: str, purpose: str, model: str = None):
+    """Print debug information for LLM calls when debug mode is enabled."""
+    if LLM_DEBUG_MODE:
+        from rich import print as rprint
+        from rich.text import Text
+        model_info = f" [{model}]" if model else ""
+        rprint(Text(f"🤖 LLM Call: {component} → {purpose}{model_info}", style="dim bright_blue")) 
