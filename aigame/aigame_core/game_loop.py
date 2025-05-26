@@ -413,13 +413,12 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
         old_npc_items_initial = [item.name for item in npc.items]
         old_player_items_initial = [item.name for item in player1.items]
         
-        # NPC speaks first
-        npc_opening_response = handle_npc_response(npc, player1, current_location)
+        # For opening, analyze the game start event and update disposition if needed
+        opening_events = f"Game started; {npc.name} is about to speak first"
+        game_master.analyze_and_update_disposition(npc, player1, opening_events, scenario)
         
-        # Analyze NPC's opening and update disposition if needed
-        if npc_opening_response:
-            opening_events = f"Game started; {npc.name} spoke first: {npc_opening_response}"
-            game_master.analyze_and_update_disposition(npc, player1, opening_events, scenario)
+        # NPC speaks first - now uses updated disposition
+        npc_opening_response = handle_npc_response(npc, player1, current_location)
         
         # Display any state changes from NPC's opening
         display_interaction_state(player1, npc, old_player_items_initial, old_npc_items_initial, old_disposition_initial)
@@ -488,22 +487,8 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
             console.line() # Add a little space before re-prompting
             continue
         
-        # === NPC RESPONSE SECTION ===
-        npc_actual_response_text = None 
-
-        # NPC's turn (if applicable)
-        if action_processed_successfully and action_processed_successfully not in ["TRADE_ACCEPTED", "TRADE_DECLINED"]: # If true, it means player did something that might elicit a response
-            npc_actual_response_text = handle_npc_response(npc, player1, current_location)
-        else:
-            # This else block might not be strictly necessary anymore if 'continue' is used for failed actions.
-            # However, handle_player_action returns false for empty input, or input not starting with /,
-            # or for failed commands *without dialogue*. In these cases, we `continue` above.
-            # If handle_player_action were to return true but somehow NPC shouldn't respond (which is not current design),
-            # this block would be hit. For now, it is defensive.
-            pass # No NPC response needed if action_processed_successfully was false and we didn't continue.
-
         # === GAME MASTER ANALYSIS SECTION ===
-        # Analyze recent events and update NPC disposition
+        # Analyze recent events and update NPC disposition BEFORE NPC responds
         if action_processed_successfully:
             # Build a summary of recent events for disposition analysis
             recent_events = []
@@ -512,7 +497,7 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
             if player_msg.strip():
                 recent_events.append(f"Player said/did: {player_msg}")
             
-            # Add item changes if any occurred
+            # Add item changes if any occurred (from player actions like giving items)
             current_player_items = [item.name for item in player1.items]
             current_npc_items = [item.name for item in npc.items]
             
@@ -532,14 +517,24 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
                 if items_lost:
                     recent_events.append(f"{npc.name} lost items: {', '.join(items_lost)}")
             
-            # Add NPC response if there was one
-            if npc_actual_response_text:
-                recent_events.append(f"{npc.name} responded: {npc_actual_response_text}")
-            
             # Only analyze if there were meaningful events
             if recent_events:
                 events_summary = "; ".join(recent_events)
                 game_master.analyze_and_update_disposition(npc, player1, events_summary, scenario)
+
+        # === NPC RESPONSE SECTION ===
+        npc_actual_response_text = None 
+
+        # NPC's turn (if applicable) - now uses updated disposition
+        if action_processed_successfully and action_processed_successfully not in ["TRADE_ACCEPTED", "TRADE_DECLINED"]: # If true, it means player did something that might elicit a response
+            npc_actual_response_text = handle_npc_response(npc, player1, current_location)
+        else:
+            # This else block might not be strictly necessary anymore if 'continue' is used for failed actions.
+            # However, handle_player_action returns false for empty input, or input not starting with /,
+            # or for failed commands *without dialogue*. In these cases, we `continue` above.
+            # If handle_player_action were to return true but somehow NPC shouldn't respond (which is not current design),
+            # this block would be hit. For now, it is defensive.
+            pass # No NPC response needed if action_processed_successfully was false and we didn't continue.
 
         # === STATE CHANGES SECTION ===
         # Display state changes after both player and NPC (if any) have acted, and GM assessment
