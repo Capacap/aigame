@@ -1,6 +1,7 @@
 {
   "name": "Merchant Haggle",
-  "description": "The player, Alex the Scholar, encounters Shady Sal at a bazaar stall. Sal has an Ancient Amulet that Alex needs. Alex must try to acquire it, perhaps by haggling or trading.",
+  "setting": "Bustling fantasy marketplace where commerce and magic intersect in a web of opportunity and danger. Ancient artifacts flow through trade networks alongside mundane goods, while shrewd merchants navigate the delicate balance between profit and survival. This is a world where a scholar's theoretical knowledge must compete with street-smart negotiation skills, and where the right magical item can change one's fate forever. Reputation travels faster than gold, and every transaction carries the potential for both fortune and ruin.",
+  "description": "Enter a high-stakes commercial duel where wit, timing, and psychological insight determine victory. Shady Sal is a master negotiator who thrives on the mental chess game of bargaining, making this encounter as much about reading personality as evaluating goods. Your academic background may seem like a disadvantage in this cutthroat marketplace, but Sal respects clever thinking and despises being underestimated. The chaotic Bazaar Stall environment creates opportunities to discover value while building rapport through shared appreciation of the negotiation art. Success requires balancing scholarly honesty with commercial savvy, finding creative deal structures, and recognizing that Sal's ego and loneliness can be leveraged by those who show genuine respect for their business acumen.",
   "location_name": "Bazaar Stall",
   "player_character_name": "Alex the Scholar",
   "npc_character_name": "Shady Sal",

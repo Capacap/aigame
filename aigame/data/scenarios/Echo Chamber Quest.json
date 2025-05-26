@@ -1,6 +1,7 @@
 {
     "name": "Echo Chamber Quest",
-    "description": "Assist Archivist Silas in accessing the Chamber of Echoes by trading a translation cypher for the Echo Chamber Key.",
+    "setting": "Ancient academic realm where mystical knowledge and scholarly institutions intertwine. Universities and archives serve as bastions of power, guarding secrets that could reshape reality itself. Scholars wield influence through mastery of forgotten languages and access to forbidden texts, while magical artifacts like the Echo Chamber amplify intellectual pursuits into tangible power. This is a world where academic credentials carry the weight of noble titles, and the pursuit of knowledge can unlock doors to otherworldly mysteries.",
+    "description": "Navigate a delicate academic negotiation where scholarly passion meets institutional caution. Archivist Silas guards the Echo Chamber Key with the weight of professional responsibility, making this more than a simple trade - it's a test of intellectual integrity and mutual respect. Your Translation Cypher represents genuine scholarly value, but Silas needs convincing that you're worthy of accessing such powerful knowledge. Success requires demonstrating authentic academic purpose, understanding the risks involved, and appealing to shared scholarly values rather than mere transactional exchange. The intimate Archive Study setting rewards thoughtful discourse over aggressive bargaining, making this a battle of minds and principles.",
     "location_name": "Archive Study",
     "player_character_name": "Alex the Scholar",
     "npc_character_name": "Archivist Silas",

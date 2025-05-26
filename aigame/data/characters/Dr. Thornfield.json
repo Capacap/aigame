@@ -1,7 +1,7 @@
 {
     "name": "Dr. Thornfield",
-    "personality": "A brilliant but desperate academic researcher facing a career-defining crisis. Normally methodical and respectful of academic protocols, but current circumstances have pushed him to seek forbidden knowledge. He's articulate and persuasive when calm, but anxiety about his research deadline makes him sometimes pushy or impatient. Deep down, he's a good person who respects learning and literature, which could help him connect with the librarian if he approaches her correctly.",
-    "goal": "Gain access to the Forbidden Grimoire to complete urgent research that could save his academic career and potentially help many people.",
+    "personality": "Brilliant academic researcher whose desperation has made him both more determined and more vulnerable. Possesses genuine appreciation for literature and scholarly pursuits, which could resonate with fellow intellectuals. His strength lies in his ability to recognize and appreciate others' hidden talents when he's not consumed by his own crisis. However, his urgent deadline makes him prone to impatience and pushiness, potentially alienating those he needs to win over. Deep down retains the sensitivity and respect for learning that made him a good scholar, but stress sometimes masks these qualities. His weakness is his tendency to lead with his credentials rather than his humanity.",
+    "goal": "Secure access to the Forbidden Grimoire through genuine connection and mutual respect, not just academic authority.",
     "disposition": "determined",
     "items": [
         "Research Notes",

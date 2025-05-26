@@ -1,10 +1,10 @@
 {
     "name": "Alex the Scholar",
-    "personality": "A curious and determined individual, always seeking knowledge.",
-    "goal": "To uncover ancient secrets.",
+    "personality": "Intellectually driven researcher with an insatiable hunger for ancient knowledge. Possesses genuine scholarly passion that resonates with fellow academics, but sometimes lacks practical negotiation skills. Tends to approach problems analytically rather than emotionally, which can be both an asset and liability. Has a natural curiosity that makes others want to share information, but may underestimate the value of what they possess. Earnest and honest to a fault, making them trustworthy but potentially naive in commercial dealings.",
+    "goal": "To uncover ancient secrets and expand the boundaries of human knowledge, regardless of personal cost.",
     "disposition": "Focused and observant",
     "items": [
-        "translation cypher",
+        "Translation Cypher",
         "Bag of Coins"
     ]
 } 

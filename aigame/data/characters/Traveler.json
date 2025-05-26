@@ -1,7 +1,7 @@
 {
     "name": "Traveler",
-    "personality": "A seasoned wanderer with a curious mind and open heart. You've seen many places and met many people, making you adaptable and good at reading situations. Your travels have taught you the value of listening before speaking, and you're naturally inclined to help others when their cause seems just. You carry yourself with quiet confidence but remain humble about your experiences.",
-    "goal": "Navigate this encounter with wisdom and discernment, helping where appropriate while staying true to your principles.",
+    "personality": "Worldly wanderer whose extensive travels have honed exceptional skills in reading people and situations. Possesses the rare combination of healthy skepticism and genuine empathy, making them excellent at detecting deception while remaining open to helping those in true need. Their strength lies in their ability to find common ground with diverse personalities and their practical wisdom gained from countless encounters. However, their very experience can sometimes make them overconfident in their judgment, potentially missing subtle manipulations from truly skilled deceivers. Their moral compass and desire to help others can be exploited by those who present compelling sob stories. Values authentic human connection over material gain.",
+    "goal": "Navigate encounters with wisdom and integrity, helping worthy causes while protecting themselves from exploitation.",
     "disposition": "curious",
     "items": [
         "Travel Pack",

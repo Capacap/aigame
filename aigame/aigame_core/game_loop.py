@@ -280,14 +280,14 @@ def handle_player_action(player1: Player, npc: Character, player_msg: str, curre
         rprint(Text("You can talk to the character, offer items, propose trades, or type 'help' for guidance.", style="dim white"))
         return False
 
-def handle_npc_response(npc: Character, player_object: Player, current_location: Location) -> str | None:
+def handle_npc_response(npc: Character, player_object: Player, current_location: Location, scenario: Scenario = None) -> str | None:
     """
     Enhanced version of handle_npc_response that uses AI action parsing.
     Returns the AI's spoken response string or None.
     """
     
     # Use the new AI action parsing method
-    ai_response, action_results = npc.get_ai_response_with_actions(player_object, current_location)
+    ai_response, action_results = npc.get_ai_response_with_actions(player_object, current_location, scenario)
     
     if ai_response:
         # NPC Response Section
@@ -418,7 +418,7 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
         game_master.analyze_and_update_disposition(npc, player1, opening_events, scenario)
         
         # NPC speaks first - now uses updated disposition
-        npc_opening_response = handle_npc_response(npc, player1, current_location)
+        npc_opening_response = handle_npc_response(npc, player1, current_location, scenario)
         
         # Display any state changes from NPC's opening
         display_interaction_state(player1, npc, old_player_items_initial, old_npc_items_initial, old_disposition_initial)
@@ -527,7 +527,7 @@ def run_interaction_loop(player1: Player, npc: Character, current_location: Loca
 
         # NPC's turn (if applicable) - now uses updated disposition
         if action_processed_successfully and action_processed_successfully not in ["TRADE_ACCEPTED", "TRADE_DECLINED"]: # If true, it means player did something that might elicit a response
-            npc_actual_response_text = handle_npc_response(npc, player1, current_location)
+            npc_actual_response_text = handle_npc_response(npc, player1, current_location, scenario)
         else:
             # This else block might not be strictly necessary anymore if 'continue' is used for failed actions.
             # However, handle_player_action returns false for empty input, or input not starting with /,

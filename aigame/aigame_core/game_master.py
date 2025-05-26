@@ -49,6 +49,10 @@ class GameMaster:
             f"Player Character: {scenario.player_character_name}\n"
             f"NPC: {scenario.npc_character_name}"
         )
+        
+        # Add scenario setting if available
+        if hasattr(scenario, 'setting') and scenario.setting:
+            user_prompt += f"\nWorld Setting: {scenario.setting}"
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -88,12 +92,23 @@ class GameMaster:
         
         # Enhanced system prompt with scenario context
         if scenario:
+            # Build scenario setting context
+            setting_context = ""
+            if hasattr(scenario, 'setting') and scenario.setting:
+                setting_context = (
+                    f"- World Setting: {scenario.setting}\n"
+                    f"- This world context should inform how characters react emotionally and socially. "
+                    f"Consider genre-appropriate responses (e.g., comedic settings allow more exaggerated reactions, "
+                    f"dark fantasy settings emphasize caution and mistrust, academic settings value intellectual respect).\n"
+                )
+            
             system_prompt = (
                 f"You are an expert Game Master AI analyzing character disposition changes. "
                 f"Your task is to determine if recent events warrant updating an NPC's disposition "
                 f"based on their personality and the scenario's victory conditions.\n\n"
                 f"SCENARIO CONTEXT:\n"
                 f"- Scenario: {scenario.name}\n"
+                f"{setting_context}"
                 f"- Victory Condition: {scenario.victory_condition}\n"
                 f"- This means the disposition should reflect how likely the NPC is to help achieve this specific goal.\n\n"
                 f"CHARACTER ANALYSIS:\n"
@@ -110,7 +125,8 @@ class GameMaster:
                 f"- For librarians: How likely to give access to restricted materials\n"
                 f"- For merchants: How favorable the trading terms might be\n"
                 f"- For information holders: How willing to share secrets or keys\n"
-                f"- Consider both emotional state AND practical willingness to cooperate\n\n"
+                f"- Consider both emotional state AND practical willingness to cooperate\n"
+                f"- Factor in the world setting's social norms and typical character behavior patterns\n\n"
                 f"Examples of scenario-relevant dispositions:\n"
                 f"- 'reluctantly considering the request' (moving toward cooperation)\n"
                 f"- 'firmly protective of the grimoire' (resistant to giving key items)\n"
@@ -118,6 +134,7 @@ class GameMaster:
                 f"- 'suspicious of the stranger's motives' (less likely to help)\n\n"
                 f"Analyze if the recent events warrant a disposition change. "
                 f"Focus on how the events affect the NPC's willingness to help achieve the victory condition. "
+                f"Consider the world setting when determining appropriate emotional and social responses. "
                 f"Respond with JSON: {{'should_update': boolean, 'new_disposition': 'string', 'reasoning': 'explanation'}}"
             )
         else:

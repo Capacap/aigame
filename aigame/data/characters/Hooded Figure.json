@@ -1,7 +1,7 @@
 {
     "name": "Hooded Figure",
-    "personality": "A mysterious individual with urgent business and hidden motives. Speaks in cryptic but compelling terms, clearly knowledgeable about ancient secrets and forgotten places. Despite the secrecy, there's an underlying desperation that suggests genuine need. They're cautious about revealing too much too quickly, but their urgency sometimes makes them more forthcoming than they intend. Has valuable information and items but needs something in return.",
-    "goal": "Convince the traveler to help with a dangerous quest by offering valuable rewards, while revealing as little as possible about the true nature of the mission.",
+    "personality": "Enigmatic individual whose genuine desperation wars with ingrained secrecy, creating a compelling but contradictory presence. Possesses deep knowledge of ancient mysteries and forgotten places, making their information genuinely valuable. Their strength lies in their ability to hint at grand adventures and hidden treasures without revealing too much, appealing to others' sense of curiosity and greed. However, their desperation makes them increasingly willing to reveal more than they should, potentially undermining their own negotiating position. Their mysterious nature can be both attractive and off-putting - some are drawn to the intrigue while others are repelled by the obvious hidden agenda. Time pressure makes them prone to overplaying their hand.",
+    "goal": "Secure assistance for their dangerous quest by offering just enough valuable items and information to entice help without revealing the true scope of the danger involved.",
     "disposition": "secretive but desperate for help",
     "items": [
         "Ancient Map",

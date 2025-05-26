@@ -1,7 +1,7 @@
 {
     "name": "Archivist Silas",
-    "personality": "A meticulous scholar who values knowledge above all else. He's cautious about sharing his research but recognizes the importance of collaboration. Silas is methodical in his approach and appreciates those who demonstrate genuine scholarly interest.",
-    "goal": "To advance his research on ancient languages while ensuring his work contributes to the greater understanding of historical texts.",
+    "personality": "Methodical scholar who treats knowledge as sacred trust requiring careful stewardship. Values intellectual integrity above material gain, making him resistant to simple monetary offers but responsive to genuine academic collaboration. Has spent years building his reputation through meticulous research, making him cautious about risky ventures that could compromise his standing. Deeply respects those who demonstrate true scholarly dedication and can be swayed by appeals to the greater good of knowledge preservation. His weakness lies in his isolation - he craves meaningful intellectual discourse and recognition from peers.",
+    "goal": "To advance linguistic research while ensuring ancient knowledge is preserved and shared responsibly with worthy scholars.",
     "disposition": "cautious about trading the key",
     "items": [
         "Echo Chamber Key",

@@ -107,7 +107,7 @@ class Character:
         except Exception as e:
             rprint(f"[bold red]Error adding to conversation history: {e}[/bold red]")
 
-    def _prepare_llm_messages(self, current_location: Location) -> list[MessageEntry]:
+    def _prepare_llm_messages(self, current_location: Location, scenario: 'Scenario' = None) -> list[MessageEntry]:
         items_str = ", ".join(item.name for item in self.items) if self.items else "nothing"
         location_info = f"You are currently in: {current_location.name}. {current_location.description}"
         
@@ -121,22 +121,20 @@ class Character:
             f"Consider how your current state of mind affects your willingness to trade, "
             f"your trust in the player, and your evaluation of the offer.\n"
             f"You are currently carrying: {items_str}.\n"
-            f"{location_info}\n\n"
+            f"{location_info}\n"
         )
         
+        # Add scenario setting context if available
+        if scenario and hasattr(scenario, 'setting'):
+            system_message_content += (
+                f"\n🌍 WORLD CONTEXT: {scenario.setting}\n"
+                f"This world context should inform your behavior, dialogue style, and decision-making. "
+                f"Consider how the setting influences social norms, power dynamics, and the significance of your actions.\n"
+            )
+        
         system_message_content += (
-            f"You will act and speak as {self.name} based on this information. Do not break character. "
-            f"Your dialogue should reflect your thoughts and speech, with your current disposition '{self.disposition}' "
-            f"being the PRIMARY driver of how you respond. "
-            f"Only provide {self.name}'s next line of dialogue in response to the user. "
-            f"The user may perform actions (like giving you items, complimenting you, or insulting you). These will be described in their message (e.g., \"I hand the item_name over to you.\", \"You seem very wise.\", or \"Your wares are terrible!\"). React naturally to such actions, both in your dialogue and by considering changes to your disposition."
-            f"When the player uses a command like '/give ItemName', they are OFFERING you the item. It is not yet in your possession. Their message might look like '*I offer you the ItemName. Do you accept?*'. To accept the offered item, you MUST use the 'accept_item_offer' tool. If you do not want the item, simply state that in your dialogue."
-            f"When the player asks for one of your items (their message might look like '*I would like to have your ItemName.*'), you can choose to give it to them or refuse. If you decide to give it, use the 'give_item_to_user' tool. If you refuse, simply explain why in your dialogue."
-            f"Trade proposals are handled automatically before you speak - you don't need to worry about them in your dialogue. Just respond naturally to the outcome. "
-            f"If a trade was just completed, acknowledge it naturally in your response. "
-            f"Pay close attention to any 'SYSTEM_ALERT' or 'SYSTEM_OBSERVATION' messages in the history. These provide direct prompts or context for you to consider significant changes or facts."
-            f"You have tools available to interact with the game world. These include: "
-            f"1. 'give_item_to_user': Use this tool if you willingly decide to give an item YOU possess to the user. You MUST use this tool to transfer an item. Clearly state your intention first." 
+            f"\nYou can use these tools when appropriate:\n"
+            f"1. 'give_item_to_player': If you decide to give an item to the player, use this tool to transfer it. State your intention to give before using the tool.\n"
             f"2. 'accept_item_offer': If the player has offered you an item (their message will indicate this, e.g., '*I offer you ItemName.*'), use this tool to formally accept and take the item. State your intention to accept before using the tool."
         )
         
@@ -144,7 +142,7 @@ class Character:
         messages.extend(self.interaction_history.get_llm_history())
         return messages
 
-    def handle_standing_trade_offer(self, player_object: 'Player', current_location: 'Location') -> str | None:
+    def handle_standing_trade_offer(self, player_object: 'Player', current_location: 'Location', scenario: 'Scenario' = None) -> str | None:
         """
         Handles a standing trade offer using AI to make the decision.
         Returns the NPC's spoken response or None if no response.
@@ -158,7 +156,7 @@ class Character:
         npc_item_name = self.active_trade_proposal.get("npc_item_name", "")
 
         # Prepare messages for LLM
-        messages = self._prepare_llm_messages(current_location)
+        messages = self._prepare_llm_messages(current_location, scenario)
         
         # Add trade decision context
         trade_context = (
@@ -245,7 +243,7 @@ class Character:
             self.active_trade_proposal = None
             return f"[{self.name} seems distracted and doesn't respond to the trade proposal.]"
 
-    def handle_standing_request(self, player_object: 'Player', current_location: 'Location') -> str | None:
+    def handle_standing_request(self, player_object: 'Player', current_location: 'Location', scenario: 'Scenario' = None) -> str | None:
         """
         Handles a standing item request using AI to make the decision.
         Returns the NPC's spoken response or None if no response.
@@ -258,7 +256,7 @@ class Character:
         item_name = self.active_request.get("item_name", "")
 
         # Prepare messages for LLM
-        messages = self._prepare_llm_messages(current_location)
+        messages = self._prepare_llm_messages(current_location, scenario)
         
         # Add request decision context
         request_context = (
@@ -342,7 +340,7 @@ class Character:
             self.active_request = None
             return f"[{self.name} seems distracted and doesn't respond to the request.]"
 
-    def get_ai_response(self, player_object: 'Player', current_location: Location) -> str | None:
+    def get_ai_response(self, player_object: 'Player', current_location: Location, scenario: 'Scenario' = None) -> str | None:
         from .player import Player # Corrected import: Import Player here, inside the method
 
         # Validate arguments
@@ -352,22 +350,22 @@ class Character:
             raise ValueError("current_location must be a Location instance.")
 
         # Handle standing trade offer first
-        trade_response = self.handle_standing_trade_offer(player_object, current_location)
+        trade_response = self.handle_standing_trade_offer(player_object, current_location, scenario)
         if trade_response:
             return trade_response
 
         # Handle standing request second
-        request_response = self.handle_standing_request(player_object, current_location)
+        request_response = self.handle_standing_request(player_object, current_location, scenario)
         if request_response:
             return request_response
 
-        # Handle standing offer third
-        offer_response = self.handle_standing_offer(player_object, current_location)
-        if offer_response:
-            return offer_response
+        # Handle standing offer third (commenting out since method doesn't exist)
+        # offer_response = self.handle_standing_offer(player_object, current_location, scenario)
+        # if offer_response:
+        #     return offer_response
 
         # Regular conversation - prepare messages
-        current_messages = self._prepare_llm_messages(current_location)
+        current_messages = self._prepare_llm_messages(current_location, scenario)
 
         # Define available tools for the NPC
         active_tools = [
@@ -444,7 +442,7 @@ class Character:
                     self.interaction_history.add_entry(role="tool", content=tool_result_content, tool_call_id=tool_call_id, name=function_name)
                 
                 # Get the updated history for the final call
-                messages_for_final_call = self._prepare_llm_messages(current_location)
+                messages_for_final_call = self._prepare_llm_messages(current_location, scenario)
 
                 debug_llm_call("Character", f"Final response after tools for {self.name}", DEFAULT_LLM_MODEL)
                 final_response = litellm.completion(model=DEFAULT_LLM_MODEL, messages=messages_for_final_call)
@@ -476,7 +474,7 @@ class Character:
             rprint(Text(f"Error getting AI response for {self.name}: {e}", style="bold red"))
             return None
 
-    def get_ai_response_with_actions(self, player_object: 'Player', current_location: Location) -> tuple[str | None, dict]:
+    def get_ai_response_with_actions(self, player_object: 'Player', current_location: Location, scenario: 'Scenario' = None) -> tuple[str | None, dict]:
         """
         Enhanced version that generates AI response and parses actions from natural language.
         Returns (spoken_response, action_results_dict)
@@ -491,7 +489,7 @@ class Character:
             raise ValueError("current_location must be a Location instance.")
         
         # Prepare messages for natural dialogue generation
-        messages = self._prepare_llm_messages(current_location)
+        messages = self._prepare_llm_messages(current_location, scenario)
         
         debug_llm_call("Character", f"Natural dialogue with actions for {self.name}", DEFAULT_LLM_MODEL)
         
