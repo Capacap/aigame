@@ -12,8 +12,12 @@ Provides beautiful, structured logging using Rich console output with support fo
 import logging
 import sys
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, TYPE_CHECKING
 from datetime import datetime
+
+if TYPE_CHECKING:
+    from typing import Self
+    from rich.console import Console as RichConsole
 
 try:
     from rich.console import Console
@@ -33,10 +37,10 @@ except ImportError:
 class GameLogger:
     """Centralized logger for the AI Game with Rich integration."""
     
-    _instance: Optional['GameLogger'] = None
+    _instance: Optional['Self'] = None
     _loggers: Dict[str, logging.Logger] = {}
     
-    def __new__(cls) -> 'GameLogger':
+    def __new__(cls) -> 'Self':
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -239,7 +243,7 @@ class GameLogger:
 class PerformanceTimer:
     """Context manager for timing operations with rich output."""
     
-    def __init__(self, operation_name: str, logger: logging.Logger, console: Optional[Console]):
+    def __init__(self, operation_name: str, logger: logging.Logger, console: Optional['RichConsole']):
         self.operation_name = operation_name
         self.logger = logger
         self.console = console
