@@ -1,3 +1,10 @@
+"""
+AI inference module for text and JSON generation.
+
+Provides high-level functions for AI text and JSON generation with automatic
+reasoning extraction, retry logic, and comprehensive error handling.
+"""
+
 # ============================================================================
 # IMPORTS
 # ============================================================================

@@ -146,7 +146,7 @@ Archivist Silas: Excellent! That cypher would be invaluable for my work. I accep
 ## Future Expansion
 
 The game is designed for easy extension:
-- Add new scenarios by creating JSON files in `aigame/data/scenarios/`
+- Add new scenarios by creating JSON files in `data/scenarios/`
 - Create new characters, items, and locations through JSON definitions
 - Extend action types in the input parser for new game mechanics
 - Add new victory condition types in the game master

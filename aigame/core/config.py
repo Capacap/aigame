@@ -1,3 +1,17 @@
+"""
+Configuration module for the AI Game project.
+
+Contains all configuration settings for the application including:
+- Debug and logging settings
+- API configuration and endpoints
+- Network and timeout settings
+- AI model configuration
+- LiteLLM and provider-specific settings
+
+All settings are module-level variables that can be imported and modified
+as needed by other modules in the application.
+"""
+
 # Debug mode
 debug_mode = True
 
@@ -5,7 +19,7 @@ debug_mode = True
 log_level = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 log_to_file = True  # Enable file logging
 log_file_rotation = True  # Enable daily log file rotation
-log_directory = "data/logs"  # Directory where log files are stored
+log_directory = "logs"  # Directory where log files are stored
 console_rich_output = True  # Use Rich for beautiful console output
 show_performance_timers = False  # Show performance timing in console (disabled for cleaner output)
 
