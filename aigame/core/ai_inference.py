@@ -5,9 +5,56 @@
 import time
 import json
 import re
+import logging
 from typing import Dict, Any, Optional, Protocol, List
 from litellm import completion
 from .logger import ai_request_debug, ai_response_debug, get_logger, performance_timer
+
+# Configure LiteLLM logging
+import litellm
+
+
+# ============================================================================
+# CONFIGURATION SETUP
+# ============================================================================
+
+def _configure_litellm_for_config(config: 'AIInferenceConfig'):
+    """Configure LiteLLM based on the provided config settings."""
+    try:
+        from . import config as global_config
+        
+        # Set LiteLLM verbosity based on config
+        show_litellm_console = getattr(global_config, 'show_litellm_console_logs', False)
+        console_minimal = getattr(global_config, 'console_minimal_mode', True)
+        
+        if console_minimal and not show_litellm_console:
+            # Disable LiteLLM console output but keep file logging
+            litellm.set_verbose = False
+            
+            # Configure LiteLLM and related loggers to not output to console
+            logger_names = [
+                'LiteLLM', 'httpx', 'openai._base_client', 'httpcore.connection',
+                'httpcore.http11', 'urllib3.connectionpool', 'requests.packages.urllib3.connectionpool'
+            ]
+            
+            for logger_name in logger_names:
+                logger = logging.getLogger(logger_name)
+                logger.setLevel(logging.WARNING)  # Only show warnings/errors in console
+                
+                # Remove existing console handlers
+                for handler in logger.handlers[:]:
+                    if isinstance(handler, logging.StreamHandler):
+                        logger.removeHandler(handler)
+                        
+                # Ensure file logging still works
+                logger.propagate = True
+        else:
+            # Enable verbose logging if requested
+            litellm.set_verbose = config.debug_mode
+            
+    except ImportError:
+        # Fallback if config module not available
+        litellm.set_verbose = config.debug_mode
 
 
 # ============================================================================
@@ -118,6 +165,7 @@ def generate_text_response(messages: List[Dict[str, str]], config: AIInferenceCo
         >>> print(result['content'])  # Main explanation
         >>> print(result['reasoning'])  # AI's thinking process (if any)
     """
+    _configure_litellm_for_config(config)
     _validate_messages_and_params(messages, temperature, repetition_penalty)
     
     request_params = _build_request_params(messages, config, temperature, repetition_penalty, max_tokens=max_tokens, is_json=False)
@@ -155,6 +203,7 @@ def generate_json_response(messages: List[Dict[str, str]], config: AIInferenceCo
         >>> result = generate_json_response(messages, config)
         >>> character = result['content']  # {'name': 'Hero', 'level': 1}
     """
+    _configure_litellm_for_config(config)
     _validate_messages_and_params(messages, temperature, repetition_penalty)
     _validate_json_request(messages)  # Additional validation for JSON requests
     

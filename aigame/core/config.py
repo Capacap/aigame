@@ -5,8 +5,15 @@ debug_mode = True
 log_level = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 log_to_file = True  # Enable file logging
 log_file_rotation = True  # Enable daily log file rotation
+log_directory = "data/logs"  # Directory where log files are stored
 console_rich_output = True  # Use Rich for beautiful console output
-show_performance_timers = True  # Show performance timing in console
+show_performance_timers = False  # Show performance timing in console (disabled for cleaner output)
+
+# Console Output Control (NEW)
+console_debug_level = "INFO"  # Console logging level (separate from file logging)
+show_ai_debug_panels = False  # Show detailed AI request/response panels in console
+show_litellm_console_logs = False  # Show LiteLLM logs in console (always logged to file)
+console_minimal_mode = True  # Minimal console output, detailed logs go to file only
 
 # API Base Configuration (for custom endpoints)
 api_base = None  # Set this to your custom endpoint URL if using a custom LLM server
