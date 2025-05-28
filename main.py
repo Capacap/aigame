@@ -2,60 +2,72 @@
 """
 AI Game - Main Entry Point
 
-Simple demonstration of the AI inference capabilities.
+Sets up and runs a conversation game with 3 random characters.
 """
 
 import os
-from dataclasses import dataclass
-from aigame import generate_text_response, generate_json_response
+import random
+from aigame.core.game import GameEngine
 
-@dataclass
-class SimpleConfig:
-    """Simple configuration for AI inference demonstration."""
-    debug_mode: bool = False  # Changed to False for cleaner console output
-    model: str = "gpt-4o-mini"
-    api_key: str = None  # Will use OPENAI_API_KEY environment variable
-    api_base: str = None
-    api_version: str = None
-    request_timeout: int = 30
-    force_ipv4: bool = False
-    max_retries: int = 2
-    retry_delay: float = 1.0
-
-if __name__ == "__main__":
-    print("🎮 AI Game - Inference Demo")
+def main():
+    print("🎮 AI Game - Character Conversation")
     print("=" * 40)
     
     # Check for API key
     if not os.getenv('OPENAI_API_KEY'):
-        print("⚠️  No OPENAI_API_KEY found. Set environment variable to run real demos.")
+        print("⚠️  No OPENAI_API_KEY found. Set environment variable to run the game.")
         print("   Example: export OPENAI_API_KEY='your-key-here'")
-        exit(1)
-    
-    config = SimpleConfig()
+        return
     
     try:
-        # Demonstrate text generation
-        print("\n📝 Text Generation Demo:")
-        text_messages = [{"role": "user", "content": "Say hello and introduce yourself as an AI game assistant"}]
-        text_result = generate_text_response(text_messages, config)
-        print(f"Response: {text_result['content']}")
-        if text_result['reasoning']:
-            print(f"Reasoning: {text_result['reasoning']}")
+        # Initialize game engine
+        print("🚀 Initializing game...")
+        game = GameEngine()
+        game.initialize_game()
         
-        # Demonstrate JSON generation
-        print("\n🔧 JSON Generation Demo:")
-        json_messages = [
-            {"role": "system", "content": "Respond with valid JSON only"},
-            {"role": "user", "content": "Create a simple game character in JSON format with name, level, and health"}
-        ]
-        json_result = generate_json_response(json_messages, config)
-        print(f"JSON Response: {json_result['content']}")
-        if json_result['reasoning']:
-            print(f"Reasoning: {json_result['reasoning']}")
-            
-        print("\n✅ Demo completed successfully!")
+        # Get all available characters
+        all_characters = game.game_state.turn_order.copy()
+        
+        # Select 3 random characters
+        if len(all_characters) >= 3:
+            selected_characters = random.sample(all_characters, 3)
+        else:
+            selected_characters = all_characters
+        
+        # Update game state with selected characters
+        game.game_state.turn_order = selected_characters
+        game.game_state.scene_characters = selected_characters.copy()
+        
+        print(f"🎭 Selected characters: {', '.join(selected_characters)}")
+        
+        # Show character details
+        print("\n📋 Character Details:")
+        for char_name in selected_characters:
+            char_data = game.get_character_data(char_name)
+            if char_data is not None:
+                print(f"  • {char_name}: {char_data['disposition']} disposition")
+                print(f"    Goal: {char_data['goal']}")
+        
+        print(f"\n🔄 Starting conversation (5 turns)...")
+        print("=" * 50)
+        
+        # Run the game
+        game.run_game_loop(max_turns=5)
+        
+        # Show final conversation
+        dialogue_events = game.get_dialogue_history()
+        print(f"\n📜 FINAL CONVERSATION ({len(dialogue_events)} exchanges):")
+        print("-" * 50)
+        
+        for i, (_, event) in enumerate(dialogue_events.iterrows(), 1):
+            print(f"{i:2d}. {event['character']}: \"{event['content']}\"")
+        
+        print(f"\n✅ Game completed successfully!")
+        print(f"💬 Total exchanges: {len(dialogue_events)}")
         
     except Exception as e:
-        print(f"\n❌ Demo failed: {e}")
+        print(f"\n❌ Game failed: {e}")
         print("Check your API key and network connection.")
+
+if __name__ == "__main__":
+    main()
