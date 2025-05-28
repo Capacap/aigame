@@ -138,7 +138,8 @@ def test_import_error_handling():
     """Test graceful handling of import errors."""
     # Test importing non-existent module
     try:
-        from aigame.nonexistent import something
+        import importlib
+        importlib.import_module('aigame.nonexistent')
         assert False, "Should have raised ImportError"
     except ImportError:
         # Expected behavior
